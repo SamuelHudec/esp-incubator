@@ -1,0 +1,98 @@
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+**/secrets.h
+**/arduino_secrets.h
+**/secrets.yaml
+**/secrets.yml
+**/credentials.h
+**/credentials.json
+**/credentials.yaml
+**/credentials.yml
+**/credentials.local.*
+**/*_private.h
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+!**/*.example.*
+!**/secrets.example.h
+!**/secrets.example.yaml
+!**/credentials.example.*
+
+# PlatformIO
+**/.pio/
+**/.platformio/
+**/.cache/
+.clangd/
+.clang_complete
+
+# ESP-IDF / CMake / Ninja
+**/build/
+**/build_*/
+**/cmake-build-*/
+**/sdkconfig
+**/sdkconfig.old
+!**/sdkconfig.defaults
+!**/sdkconfig.defaults.*
+**/managed_components/
+**/compile_commands.json
+**/CMakeFiles/
+**/CMakeCache.txt
+**/ninja_log
+**/.ninja_deps
+**/.ninja_log
+
+# ESPHome
+**/.esphome/
+
+# Compiled firmware and intermediate objects
+*.a
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.obj
+*.uf2
+
+# CAD backups and local archives
+*.FCBak
+*.FCStd
+Archive.zip
+
+# Test, Python, and tooling caches
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/coverage/
+**/coverage.xml
+**/.coverage
+
+# Logs, captures, and local measurements (may contain personal device data)
+*.log
+*.jsonl
+*.pcap
+*.pcapng
+*.cap
+**/captures/
+**/measurements/local/
+**/data/local/
+**/resources/
+
+# Local notes and session state
+**/*_LOCAL.md
+**/*.local.md
