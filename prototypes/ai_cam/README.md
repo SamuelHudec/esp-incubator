@@ -34,8 +34,8 @@ and access by both mDNS name and IP address.
 ## Performance measurements
 
 2026-10-07: added five-second Serial Monitor measurement windows. Hardware
-verification of this instrumentation is pending; the earlier hardware test covers
-only the original stream. Compilation passed for AI Thinker ESP32-CAM with the
+verification was initially pending; the first streaming measurements are recorded
+below on 2026-10-08. The earlier hardware test covers only the original stream. Compilation passed for AI Thinker ESP32-CAM with the
 locally installed Arduino core **3.3.12** (1,055,957 bytes flash and 59,840 bytes
 static RAM before hardware testing). The instrumented version has not been
 compiled with the original **3.3.7** baseline. No board packages were changed.
@@ -75,6 +75,47 @@ outside it. Frame acquisition and sending can straddle a window boundary, so
 some overhead. The existing 30 ms frame pause remains unchanged: these results
 measure the current streaming configuration, not maximum hardware throughput.
 Without a viewer, stream counters are zero while CPU and memory reporting continues.
+
+### First streaming baseline — 2026-10-08
+
+User-supplied hardware log: 11 consecutive reporting windows ending between
+14:40:53 and 14:41:43 local time (Europe/Prague), totaling approximately **55.24 s**.
+The first timestamp marks the end of the first window. All windows reported
+320x240 JPEG and a 240 MHz CPU. The current sketch uses JPEG quality 12, two
+PSRAM framebuffers, `CAMERA_GRAB_LATEST`, and a 30 ms frame pause. The flashed
+Arduino core version and scene conditions were not confirmed in this log.
+
+| Metric | Result |
+| --- | --- |
+| Acquired / successfully sent frames | 1,397 / 1,397 |
+| Streaming throughput | **25.29 FPS**; window range 22.50–27.27 FPS |
+| Mean JPEG size | Approximately 4.27 KiB/frame |
+| Mean JPEG payload throughput | 108.31 KiB/s |
+| Mean buffer acquisition wall time | 0.110 ms/frame |
+| Mean HTTP send wall time | 9.83 ms/frame |
+| CPU 0 non-idle time | **15.76%**; range 15.0–16.9% |
+| CPU 1 non-idle time | **2.51%**; range 2.0–3.1% |
+| Mean sampled free internal RAM | 116,957 bytes; range 110,700–120,848 |
+| Lowest reported internal RAM low-water mark | 101,556 bytes |
+| Largest free internal block | 110,580 bytes initially; 106,484 in the last sample |
+| Free PSRAM | 4,156,888 bytes (approximately **3.96 MiB**) in every sample |
+| PSRAM low-water mark | Reported 0; interpretation requires investigation |
+| Mean sampled RSSI | -58 dBm; range -60 to -56 dBm |
+| Reported errors | **0** |
+
+Aggregates are approximate because the supplied window durations and averages
+are rounded. FPS uses total sent frames divided by total window duration. CPU
+and payload rates are weighted by window duration; JPEG size and send time by
+sent frames, and acquisition time by acquired frames. With zero reported errors,
+send attempts equal successful sends. RAM and RSSI averages use the 11 samples.
+
+This confirms that streaming instrumentation runs on hardware. Individual windows
+can differ by one acquired/sent frame because work crosses reporting boundaries;
+the totals here match. The observed FPS includes the configured frame pause and
+instrumentation overhead, so it is not maximum chip throughput. The log does not
+establish long-term memory stability, reconnect behavior, measurement overhead,
+or available capacity for neural-network inference. A zero `psram_min` alone is
+not evidence of PSRAM exhaustion; the reported current free PSRAM stayed constant.
 
 ### Measurement procedure
 
