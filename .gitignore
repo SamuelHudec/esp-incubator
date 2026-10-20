@@ -96,3 +96,8 @@ Archive.zip
 # Local notes and session state
 **/*_LOCAL.md
 **/*.local.md
+
+# AI camera Python experiments
+prototypes/ai_cam/neuralnet-training/.venv/
+prototypes/ai_cam/neuralnet-training/data/
+prototypes/ai_cam/neuralnet-training/runs/

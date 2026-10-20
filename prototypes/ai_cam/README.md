@@ -212,6 +212,20 @@ already carries these connections; no external camera jumpers are needed.
   flash size in the boot/upload output; this application does not require 8 MB.
 
 
+## Python face detector prototype
+
+2026-10-19: [Local Python training and inference](neuralnet-training/README.md) now implements
+the proposed tiny detector, data loading, training, fixed-threshold evaluation and
+image/MJPEG preview. Face accuracy is not yet validated; C inference and
+quantization remain future work. Streaming firmware is unchanged.
+
+## Current face detection research
+
+2026-10-09: [Plain C face detection research](docs/face-detection-research.md)
+compares candidate approaches and proposes a small trainable detector, INT8 export,
+memory budget, tracking and browser overlay integration. This is an untested
+design; the working streaming firmware has not changed.
+
 ## Future AI experiment plan
 
 Embedded AI experiment running entirely on a low-cost **AI-Thinker ESP32-CAM**.
