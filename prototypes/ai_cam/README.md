@@ -1,14 +1,20 @@
 # ESP32-CAM: simple local video stream
 
+See the [experiment log](docs/experiment-log.md) for completed changes, timing
+results, the stream/inference comparison and outstanding optimization work.
+
 ## First run
 
-The firmware is just **ai_cam.ino + secrets.h**. Open [ai_cam.ino](ai_cam.ino)
-in Arduino IDE. The original AI experiment plan is retained below for later.
+Open [firmware.ino](firmware/firmware.ino) in Arduino IDE. The sketch now includes
+`firmware/ai_detection.h` and the portable C sources under `firmware/neuralnet/`. Local Wi-Fi
+configuration remains in `firmware/secrets.h`. These files separate testable inference
+from hardware access; no new framework is required. The original AI plan remains
+below as background.
 
 1. In Boards Manager, install **esp32 by Espressif Systems 3.3.7**.
 2. Select **AI Thinker ESP32-CAM** and your programmer's serial port.
-3. Edit local `secrets.h` with your 2.4 GHz Wi-Fi name and password. If missing,
-   copy [secrets.example.h](secrets.example.h) to `secrets.h`. Git ignores secrets.
+3. Edit local `firmware/secrets.h` with your 2.4 GHz Wi-Fi name and password. If missing,
+   copy [secrets.example.h](firmware/secrets.example.h) to `firmware/secrets.h`. Git ignores secrets.
 4. Upload. Follow your programmer's download/reset procedure; release GPIO0 from
    ground before resetting into normal operation (see wiring notes below).
 5. Open Serial Monitor at **115200 baud**, reset, and wait for the printed URL.
@@ -134,10 +140,90 @@ not evidence of PSRAM exhaustion; the reported current free PSRAM stayed constan
 Local serial captures must remain untracked. Do not commit network identifiers
 or secrets. Record sanitized observations and the hardware-test date here.
 
+## Experimental C inference integration — 2026-10-20
+
+Status: desktop validation and Arduino compilation passed; **hardware verification
+of this integration is pending**. Original stream measurements predate inference.
+No upload was performed. No pin, voltage or camera configuration changes were made.
+Arduino IDE remains the development/flashing workflow; local compilation used
+Espressif core **3.3.12**. The integrated version is not verified with 3.3.7.
+
+The `firmware/neuralnet/` directory contains the category-neutral C runtime. The sketch-root
+`firmware/neuralnet.c` includes its implementation for the Arduino sketch build, since
+Arduino does not recursively compile arbitrary subdirectories. The current graph
+remains a fixed single-class detector, and the bundled training labeler is
+face-specific.
+
+Portable C under `firmware/neuralnet/` now implements BGR-to-grayscale area downsampling,
+INT8 network execution, head decoding, thresholding and greedy NMS. The generated
+model is local and ignored by Git. After successful calibration, C parity checks
+and validation, `quantize.py` automatically replaces `firmware/neuralnet/nn_model.h`
+with the exported model, including when using a custom `--out` directory.
+Failed quantization leaves the previous firmware model intact. The final console
+message identifies the checkpoint and installed header. Compile and upload the
+sketch afterwards; quantization does not update an already running board.
+
+Without this header the firmware builds with detection disabled and keeps the
+stream available. Keep generated weights out of commits; regenerate them from
+the selected checkpoint using the documented Python quantization workflow.
+
+- Raw MJPEG without inference: `http://ai-cam.local/` (port 80).
+- Detection viewer: `http://ai-cam.local/inf` (or the printed IP with `/inf`).
+- Metadata: `http://ai-cam.local:81/detections` with normalized xyxy boxes, scores,
+  result age, end-to-end inference latency, completed/error/skipped counters.
+- Threshold 0.3, NMS IoU 0.3, at most eight displayed boxes. The UI waits 500 ms between metadata requests
+  and hides results older than two seconds. It draws the last detection without
+  smoothing, visual tracking or exact frame synchronization. Fast motion may lag.
+
+Only the stream handler acquires/returns camera framebuffers. Each successfully
+streamed frame is offered to inference without waiting. When the worker slot is
+free, the JPEG is copied into an owned 64 KiB PSRAM slot. There is no fixed
+submission interval; the next available frame is accepted after completion. Frames
+are skipped when inference is busy or the JPEG exceeds the slot size; no backlog
+is built and streaming never waits on the inference mutex. Without a stream
+viewer there are no new inference submissions. Inference runs on core 1 and yields
+between layers. Busy inference can still reduce stream performance through shared
+CPU/memory bandwidth; no throughput guarantee has been measured on hardware.
+
+The worker bounds JPEG decoding to a 320x240x3 output buffer and checks decoded
+dimensions. Large buffers use PSRAM: 65,536 bytes JPEG + 230,400 bytes BGR + 49,152
+bytes activations = 345,088 bytes, excluding decoder workspace, task stack and
+metadata. Allocation/task failure disables inference while preserving streaming.
+The JPEG decoder remains the Espressif camera stack; inference and postprocessing
+are plain C. The default decoder byte order matches BGR used for OpenCV input;
+see [Espressif conversion source](https://github.com/espressif/esp32-camera/blob/master/conversions/to_bmp.c).
+
+Desktop validation on 200 images resized to QVGA: C preprocessing exactly matched
+Python INT8 input on this sample; C/Python box/score differences were at most
+5.96e-8 on identical network heads. The C network matched the quantization golden
+head exactly. Decoder implementations on desktop and ESP32 may differ slightly;
+this is not a hardware JPEG equivalence test. Build with the selected model:
+1,072,989 bytes program storage, 64,104 bytes static RAM.
+
+### Hardware verification procedure
+
+1. Build/upload in Arduino IDE and open Serial Monitor at 115200. Confirm no
+   allocation, watchdog, brownout or server errors.
+2. Close other stream viewers. Open the port-81 page and verify moving video,
+   increasing completed count, inference latency and face boxes. Check face-free
+   frames, entering/leaving the scene and rapid movement; stale boxes must clear.
+3. Watch the existing five-second FPS/CPU/memory reports for at least two minutes
+   and compare against the earlier 25.29 FPS baseline. Record detection latency,
+   errors/skips, minimum internal RAM and PSRAM. Do not assume the old FPS persists.
+4. Close/reopen the page, power-cycle, and test both mDNS and IP access. Confirm
+   the direct port-80 stream still works and no repeated memory loss occurs.
+5. Check one known colored subject/image against desktop detections if results
+   differ unexpectedly; JPEG decode/preprocessing and source image distribution
+   are separate from the already verified integer-network arithmetic.
+
+Record the date and observations after hardware testing. This prototype now has
+training/export tooling; if it becomes maintained work, consider extracting it
+into its own repository rather than growing shared abstractions here.
+
 ## Known limitations and next steps
 
-JPEG video at 320 × 240, one viewer at a time. No audio, recording, face detection
-or authentication. Use a trusted LAN without Internet port forwarding. Guest Wi-Fi
+JPEG video at 320 × 240, one viewer at a time. Experimental face detection is
+available with the locally exported model. No audio, recording or authentication. Use a trusted LAN without Internet port forwarding. Guest Wi-Fi
 isolation can prevent the phone reaching the camera. Check 2.4 GHz availability
 and credentials if connection dots continue; check power if the board resets.
 Next step: add computer vision incrementally while preserving the working stream.
@@ -731,3 +817,100 @@ The first complete version is successful when:
 High FPS is not required for V1.
 
 The constraints are part of the experiment.
+
+### Inference diagnostics
+
+Open `http://ai-cam.local/inf` for the overlay and live diagnostics.
+`http://ai-cam.local/` is the raw MJPEG stream with inference disabled.
+Close the raw-stream tab before opening the detection viewer.
+
+The viewer and `/detections` on port 81 show the highest raw candidate score
+before box filtering/NMS, the 0.3 threshold, detected versus displayed box counts,
+whether inference is running, latest result status, latency and sample age.
+A score of -1 means no score is available. `below_threshold` means inference
+completed but no candidate passed the score threshold; `no_valid_boxes` means
+scores passed but box decoding rejected their geometry. Error statuses distinguish
+JPEG inspection, JPEG decoding, preprocessing and box decoding. Displayed boxes
+expire after two seconds even if the last inference found an object.
+
+The worker also logs an `AI` summary after completion at most once every five
+seconds. CPU utilization alone does not confirm successful inference. Diagnostics
+have not yet been verified on hardware.
+
+2026-10-20: A user log showed a crash/reboot followed by camera probe failure
+`ESP_ERR_NOT_SUPPORTED`. The panic/backtrace preceding the ELF hash was missing,
+so the crash cause is unconfirmed. As a precaution, the detection HTTP response
+buffer was moved off the task stack and that server stack increased from 4096 to
+8192 bytes. This is not a confirmed hardware fix; collect the full panic output.
+
+Follow-up panic log confirms `Stack canary watchpoint triggered (httpd)` on core 1.
+This establishes a stack-boundary violation in an HTTP task, consistent with the
+response-buffer/stack-headroom issue above. Both HTTP servers use the task name
+`httpd`; without symbolication against the exact crashing ELF, the task name alone
+does not identify the handler. Stability after the change still requires a board
+test. The subsequent camera probe failure remains a separate unconfirmed issue.
+
+2026-10-20: Lowered the firmware score threshold to 0.30 for real-camera testing.
+Removed the 500 ms submission-attempt timer, which also advanced while the worker
+was busy and could delay the next inference after completion. The worker remains
+single-threaded with one owned input slot and yields between layers. CPU load can
+increase; compare stream FPS, latency and completed counts on hardware. Skipped
+now counts each offered frame rejected while busy/invalid, not periodic attempts.
+
+### Inference phase timing
+
+`AI_TIMING` and `AI_LAYERS` accompany the five-second AI summary. Values are mean
+wall-clock milliseconds over successful inferences since the previous summary;
+`samples` is the denominator. JPEG includes header inspection and decoding.
+`network` sums convolution times; `yield` separately measures the between-layer
+RTOS delays, including scheduling time. Postprocessing includes peak-score
+calculation, box decoding and NMS. `total` spans sample submission to completion,
+including handoff and small unlisted overheads, but excludes diagnostic printing.
+`L0` through `L(N-1)` follow generated `nn_layers` order, including the final head.
+Preemption during a phase is included: these are elapsed times, not CPU-cycle
+measurements. Timing uses clock reads per phase/layer, not per pixel or multiply;
+its overhead has not been benchmarked on hardware.
+
+Inference is pinned to core 1 and executes layers sequentially. CPU0's idle time
+is not automatically usable by this worker; using both cores would require
+explicit parallel work and measurement of stream/network contention.
+
+### Integer fast paths — 2026-10-20
+
+The QVGA BGR preprocessing path now uses integer 5:2 area-overlap weights instead
+of floating-point geometry. Grayscale rounding still precedes area resizing; the
+INT8 input contract is unchanged. Other source dimensions retain the generic path.
+Dense 1x1, stride-1, unpadded convolutions process four spatial positions together,
+sharing weight loads and channel-address arithmetic. Other convolutions retain
+the generic implementation. Accumulation order per output, fixed-point rounding,
+saturation, network weights, threshold and RTOS yields remain unchanged. No new
+frame or activation buffers are allocated.
+
+Baseline supplied by the user before this change: mean JPEG 120.48 ms,
+preprocessing 180.11 ms, network 526.74 ms, total 836.42 ms across three six-frame
+windows. Hardware speedup is pending. Compare `AI_TIMING`, especially `preprocess`
+and `network`, and `AI_LAYERS` L2/L4/L6/L8/L10/L11 after flashing. Also compare
+stream FPS and errors under similar scene and Wi-Fi conditions. Desktop numerical
+checks do not predict ESP32 timing.
+
+Validation: all 15 Python/native tests passed. The complete INT8 graph matched
+the NumPy reference at every layer on four inputs. On 200 validation images,
+QVGA preprocessing matched Python exactly and decoded boxes differed by at most
+5.96e-8 on identical logits. These checks used a temporary export of
+`autolabel-1000-3/best.pt`; the installed firmware model was not replaced.
+
+### Stream A/B modes — 2026-10-20
+
+- `http://ai-cam.local/`: raw MJPEG, never submits frames to inference.
+- `http://ai-cam.local/inf`: detection page with boxes and diagnostics. Its image
+  uses `/stream-inf`, whose handler submits frames to the inference worker.
+- Port 81 continues serving metadata (with read-only cross-origin access for the
+  port-80 page); the old port-81 viewer also uses the inference stream.
+
+The mode belongs to the stream request, not a persistent global switch. Closing
+an inference stream stops new submissions; an already submitted frame may finish.
+Use only one viewer. Close it before switching modes because the synchronous
+stream handler occupies its HTTP server until disconnect is detected. Allow one
+metrics window to settle, then compare a minute per mode with the same scene and
+network. The serial line `Stream started: inference=on/off` confirms the mode.
+These routes supersede earlier notes that all streams trigger inference.

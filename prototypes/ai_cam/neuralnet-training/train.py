@@ -3,7 +3,7 @@ import argparse
 import json
 import random
 import math
-from training_report import plot_history
+from utils.training_report import plot_history
 from pathlib import Path
 import numpy as np
 import cv2

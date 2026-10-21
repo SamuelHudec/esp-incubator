@@ -101,3 +101,6 @@ Archive.zip
 prototypes/ai_cam/neuralnet-training/.venv/
 prototypes/ai_cam/neuralnet-training/data/
 prototypes/ai_cam/neuralnet-training/runs/
+
+# Generated Neural network model for the local Arduino build (regenerate from checkpoint)
+prototypes/ai_cam/firmware/neuralnet/nn_model.h

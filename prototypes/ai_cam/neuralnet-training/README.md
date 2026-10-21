@@ -258,3 +258,78 @@ Only `test_comparison.jpg` is written as a test image in the training run. Its
 teacher/student panels are assembled in memory. Autolabeling still produces its
 fixed `test_teacher.jpg` inside the dataset directory for initial label review.
 Older run artifacts are preserved.
+
+## INT8 quantization and direct C export
+
+Run post-training calibration and export on CPU in Python. Use a new output
+folder; the exporter refuses to overwrite an existing export:
+
+```sh
+uv run quantize.py --checkpoint runs/autolabel-1000-4/best.pt --data data/autolabel-1000
+```
+
+Default output is `int8/` next to the checkpoint; use `--out runs/my-int8-export`
+to choose another directory. `--calibration-count 128`, `--seed 42`, and
+`--threshold 0.5` are defaults. Calibration samples training images only;
+float versus integer validation uses the entire validation split. Test is untouched.
+A local C compiler (`cc`, e.g. Xcode Command Line Tools on macOS) is required for
+parity verification. Export runs no firmware flashing and changes no checkpoint.
+After all checks and validation succeed, it automatically installs the exported
+`nn_model.h` into `../firmware/neuralnet/`, replacing the firmware model atomically.
+This also applies to custom `--out` directories. A failed export preserves the
+previous firmware model. Compile and upload Arduino firmware to use the new model.
+
+The output contains only `nn_model.h` (quantized graph and parameters),
+`golden.npz` (reference input and layer outputs), and `report.json` (quality
+metrics and provenance). Verification builds use temporary files that are removed
+on success or failure. C sources remain in `../firmware/neuralnet/`.
+
+
+This is full integer convolution inference, not merely INT8 weights with floating
+activation math. BatchNorm is fused offline, hidden tensors use one symmetric
+scale each, and the final five channels have separate scales. Output dequantization,
+sigmoid, box decoding and NMS are implemented in C and compared with Python for
+validation. The included C kernel is a correctness reference; ESP32 performance
+optimization remains pending hardware measurements. Arduino integration handles
+JPEG decoding and camera sampling.
+
+2026-10-20 initial measured export of `autolabel-1000-4/best.pt`: 128 calibration
+images, 200 validation images, threshold 0.5 and IoU 0.5. Float precision/recall:
+91.43% / 78.43%; INT8: 89.30% / 81.86%. The shift in metrics is not proof of an
+improvement: these are teacher pseudo-labels at a fixed threshold. Kernel weights:
+4,568 bytes; weights plus biases/multipliers/shifts: 7,700 bytes. Two activation
+buffers: 49,152 bytes. C/Python outputs matched exactly at every layer on four
+verification inputs. No ESP32 benchmark has been performed.
+
+## Portable C pipeline and Arduino integration
+
+The canonical C sources now live in [neuralnet](../firmware/neuralnet). They include
+preprocessing, graph execution, score/box decoding and NMS. Quantization exports
+only the model and verification data. Validate an existing export with:
+
+```sh
+uv run python -m utils.verify_pipeline --export runs/autolabel-1000-4/int8 --data data/autolabel-1000
+```
+
+This compiles the current C pipeline, checks the golden INT8 head, then compares
+QVGA preprocessing and box decoding on validation images. The report is printed
+to the terminal without adding files to the export directory. It does not flash a board.
+See [firmware setup and verification](../README.md#experimental-c-inference-integration--2026-10-20)
+for the Arduino integration and live detection viewer.
+
+## Source layout
+
+- `autolabel.py`, `train.py`, `infer.py`, `quantize.py`: main workflow commands.
+- `model.py`, `data.py`: network definition and dataset loading.
+- `tests/`: unit tests; run `uv run python -m unittest discover -s tests -v`.
+- `utils/`: training plots and the C pipeline verification tool. Run utilities
+  as modules, for example `uv run python -m utils.verify_pipeline --help`.
+- `../firmware/neuralnet/`: portable C inference and the locally generated `nn_model.h`.
+
+C runtime names are independent of the detected category. The current graph is
+still a single-class detector with a fixed 128x96 grayscale input and 16x12 head.
+Other object categories require suitable labeled training data; the bundled
+YuNet autolabeler detects faces only. Existing checkpoint and dataset format IDs
+remain unchanged so saved training runs remain readable. Older C exports using
+`tinyface_model.h` must be regenerated into a new output directory before using
+the renamed verification utility.

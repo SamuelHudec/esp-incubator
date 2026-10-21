@@ -6,6 +6,7 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
+#include "ai_detection.h"
 
 // AI-Thinker ESP32-CAM / OV2640. Pin sources and power notes: README.md.
 static httpd_handle_t server = nullptr;
@@ -82,6 +83,8 @@ static void reportMetrics() {
 }
 
 static esp_err_t streamVideo(httpd_req_t *request) {
+  const bool inferenceEnabled=request->user_ctx!=nullptr;
+  Serial.printf("Stream started: inference=%s\n",inferenceEnabled?"on":"off");
   esp_err_t result = httpd_resp_set_type(
       request, "multipart/x-mixed-replace;boundary=frame");
   if (result != ESP_OK) return result;
@@ -130,6 +133,7 @@ static esp_err_t streamVideo(httpd_req_t *request) {
       ++frameErrors;
     }
     portEXIT_CRITICAL(&metricsMux);
+    if (result == ESP_OK && inferenceEnabled) aiSubmit(frame);
     // Always release the buffer, including when the phone disconnects.
     esp_camera_fb_return(frame);
     if (result != ESP_OK) return result;
@@ -209,12 +213,24 @@ void setup() {
     stream.method = HTTP_GET;
     stream.handler = streamVideo;
     result = httpd_register_uri_handler(server, &stream);
+    if (result == ESP_OK) {
+      httpd_uri_t page={};page.uri="/inf";page.method=HTTP_GET;page.handler=aiPage;
+      result=httpd_register_uri_handler(server,&page);
+    }
+    if (result == ESP_OK) {
+      static bool inferenceEnabled=true;
+      httpd_uri_t inferenceStream={};inferenceStream.uri="/stream-inf";
+      inferenceStream.method=HTTP_GET;inferenceStream.handler=streamVideo;
+      inferenceStream.user_ctx=&inferenceEnabled;
+      result=httpd_register_uri_handler(server,&inferenceStream);
+    }
     if (result != ESP_OK) httpd_stop(server);
   }
   if (result != ESP_OK) {
     Serial.printf("HTTP server failed: %s\n", esp_err_to_name(result));
     return;
   }
+  aiStart();
   if (MDNS.begin(HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);
     Serial.printf("Open on your phone: http://%s.local/\n", HOSTNAME);
