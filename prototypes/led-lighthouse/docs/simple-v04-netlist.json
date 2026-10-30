@@ -1,0 +1,461 @@
+{
+  "revision": "0.4",
+  "date": "2026-10-30",
+  "status": "design and CAD connectivity reviewed; complete assembly NOT hardware-tested",
+  "supply": "regulated 5V only",
+  "parts": [
+    {
+      "ref": "J1",
+      "value": "Regulated 5V",
+      "kind": "J",
+      "pins": {
+        "+": "VIN_5V",
+        "-": "GND"
+      },
+      "purpose": "External verified 5V input"
+    },
+    {
+      "ref": "S1",
+      "value": "Power switch",
+      "kind": "SW",
+      "pins": {
+        "1": "VIN_5V",
+        "2": "+5V"
+      },
+      "purpose": "Main switch"
+    },
+    {
+      "ref": "J2",
+      "value": "SB00312A-1 PIR",
+      "kind": "J",
+      "pins": {
+        "VCC": "+5V",
+        "OUT": "PIR_OUT",
+        "GND": "GND"
+      },
+      "purpose": "Match module labels; physical order unverified"
+    },
+    {
+      "ref": "LDR1",
+      "value": "LDR5516",
+      "kind": "LDR",
+      "pins": {
+        "1": "LDR_SUPPLY",
+        "2": "LIGHT"
+      },
+      "purpose": "Upper leg of light-sensing divider"
+    },
+    {
+      "ref": "R12",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "+5V",
+        "2": "LDR_SUPPLY"
+      },
+      "purpose": "Limits LDR current even with P1 at zero resistance"
+    },
+    {
+      "ref": "P1",
+      "value": "100k / LIGHT",
+      "kind": "P",
+      "pins": {
+        "A": "LIGHT",
+        "B": "GND",
+        "W": "GND"
+      },
+      "purpose": "Lower divider leg; start at about 50k; wiper tied to B"
+    },
+    {
+      "ref": "R1",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "LIGHT",
+        "2": "LIGHT_BASE"
+      },
+      "purpose": "Light transistor base current limiter"
+    },
+    {
+      "ref": "Q1",
+      "value": "BC547B",
+      "kind": "Q",
+      "pins": {
+        "B": "LIGHT_BASE",
+        "C": "ARM",
+        "E": "GND"
+      },
+      "purpose": "On in light: cancels and inhibits U1 via RESET"
+    },
+    {
+      "ref": "R2",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "+5V",
+        "2": "ARM"
+      },
+      "purpose": "Enables U1 in darkness"
+    },
+    {
+      "ref": "C1",
+      "value": "10u / 16V",
+      "kind": "C",
+      "pins": {
+        "+": "ARM",
+        "-": "GND"
+      },
+      "purpose": "Short power-on reset delay, not full PIR warmup suppression"
+    },
+    {
+      "ref": "C2",
+      "value": "100n",
+      "kind": "C",
+      "pins": {
+        "1": "PIR_OUT",
+        "2": "PIR_EDGE"
+      },
+      "purpose": "AC coupling: responds to rising motion edge, blocks held HIGH"
+    },
+    {
+      "ref": "R3",
+      "value": "47k",
+      "kind": "R",
+      "pins": {
+        "1": "PIR_EDGE",
+        "2": "TRIG_BASE"
+      },
+      "purpose": "Limits PIR transient load and base clamp current"
+    },
+    {
+      "ref": "R4",
+      "value": "100k",
+      "kind": "R",
+      "pins": {
+        "1": "TRIG_BASE",
+        "2": "GND"
+      },
+      "purpose": "Returns trigger base to ground"
+    },
+    {
+      "ref": "D1",
+      "value": "1N4148",
+      "kind": "D",
+      "pins": {
+        "A": "GND",
+        "K": "TRIG_BASE"
+      },
+      "purpose": "Clamps negative base transient on PIR falling edge"
+    },
+    {
+      "ref": "Q2",
+      "value": "BC547B",
+      "kind": "Q",
+      "pins": {
+        "B": "TRIG_BASE",
+        "C": "TRIG",
+        "E": "GND"
+      },
+      "purpose": "Generates a short active-low trigger at U1 pin 2"
+    },
+    {
+      "ref": "R5",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "+5V",
+        "2": "TRIG"
+      },
+      "purpose": "Trigger pull-up"
+    },
+    {
+      "ref": "U1",
+      "value": "TLC555IP",
+      "kind": "U",
+      "pins": {
+        "1": "GND",
+        "2": "TRIG",
+        "3": "RUN",
+        "4": "ARM",
+        "5": "CTRL1",
+        "6": "TIME",
+        "7": "DISCH1",
+        "8": "+5V"
+      },
+      "purpose": "Monostable run timer"
+    },
+    {
+      "ref": "R6",
+      "value": "220k",
+      "kind": "R",
+      "pins": {
+        "1": "+5V",
+        "2": "TIME_TOP"
+      },
+      "purpose": "Minimum timing resistance"
+    },
+    {
+      "ref": "P3",
+      "value": "1M / TIME",
+      "kind": "P",
+      "pins": {
+        "A": "TIME_TOP",
+        "B": "TIME",
+        "W": "TIME"
+      },
+      "purpose": "Run-time adjustment; wiper tied to B"
+    },
+    {
+      "ref": "R7",
+      "value": "100R",
+      "kind": "R",
+      "pins": {
+        "1": "TIME",
+        "2": "DISCH1"
+      },
+      "purpose": "Limits timing capacitor discharge current"
+    },
+    {
+      "ref": "C3",
+      "value": "100u / 16V",
+      "kind": "C",
+      "pins": {
+        "+": "TIME",
+        "-": "GND"
+      },
+      "purpose": "Timing capacitor: leakage and actual duration must be tested"
+    },
+    {
+      "ref": "C4",
+      "value": "10n",
+      "kind": "C",
+      "pins": {
+        "1": "CTRL1",
+        "2": "GND"
+      },
+      "purpose": "Control voltage bypass"
+    },
+    {
+      "ref": "U2",
+      "value": "TLC555IP",
+      "kind": "U",
+      "pins": {
+        "1": "GND",
+        "2": "OSC_TIME",
+        "3": "CLOCK",
+        "4": "RUN",
+        "5": "CTRL2",
+        "6": "OSC_TIME",
+        "7": "DISCH2",
+        "8": "+5V"
+      },
+      "purpose": "Astable LED step clock; stopped by U1 while idle"
+    },
+    {
+      "ref": "R8",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "+5V",
+        "2": "DISCH2"
+      },
+      "purpose": "Astable charging resistor"
+    },
+    {
+      "ref": "R9",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "DISCH2",
+        "2": "OSC_TOP"
+      },
+      "purpose": "Minimum astable variable resistance"
+    },
+    {
+      "ref": "P2",
+      "value": "100k / SPEED",
+      "kind": "P",
+      "pins": {
+        "A": "OSC_TOP",
+        "B": "OSC_TIME",
+        "W": "OSC_TIME"
+      },
+      "purpose": "LED speed adjustment; wiper tied to B"
+    },
+    {
+      "ref": "C5",
+      "value": "10u / 16V",
+      "kind": "C",
+      "pins": {
+        "+": "OSC_TIME",
+        "-": "GND"
+      },
+      "purpose": "Astable timing capacitor"
+    },
+    {
+      "ref": "C6",
+      "value": "10n",
+      "kind": "C",
+      "pins": {
+        "1": "CTRL2",
+        "2": "GND"
+      },
+      "purpose": "Control voltage bypass"
+    },
+    {
+      "ref": "U3",
+      "value": "CD4017BE",
+      "kind": "U",
+      "pins": {
+        "1": "RESET5",
+        "2": "STEP1",
+        "3": "STEP0",
+        "4": "STEP2",
+        "5": "NC_Q6",
+        "6": "NC_Q7",
+        "7": "STEP3",
+        "8": "GND",
+        "9": "NC_Q8",
+        "10": "STEP4",
+        "11": "NC_Q9",
+        "12": "NC_CARRY",
+        "13": "GND",
+        "14": "CLOCK",
+        "15": "RESET5",
+        "16": "+5V"
+      },
+      "purpose": "Five-step sequence; preserve direct pin 1 to 15 reset wire"
+    },
+    {
+      "ref": "LED1",
+      "value": "White LED",
+      "kind": "LED",
+      "pins": {
+        "A": "STEP0",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Direct drive as in user-tested manual circuit"
+    },
+    {
+      "ref": "LED2",
+      "value": "White LED",
+      "kind": "LED",
+      "pins": {
+        "A": "STEP1",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Direct drive as in user-tested manual circuit"
+    },
+    {
+      "ref": "LED3",
+      "value": "White LED",
+      "kind": "LED",
+      "pins": {
+        "A": "STEP2",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Direct drive as in user-tested manual circuit"
+    },
+    {
+      "ref": "LED4",
+      "value": "White LED",
+      "kind": "LED",
+      "pins": {
+        "A": "STEP3",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Direct drive as in user-tested manual circuit"
+    },
+    {
+      "ref": "LED5",
+      "value": "White LED",
+      "kind": "LED",
+      "pins": {
+        "A": "STEP4",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Direct drive as in user-tested manual circuit"
+    },
+    {
+      "ref": "R10",
+      "value": "1k",
+      "kind": "R",
+      "pins": {
+        "1": "LED_RETURN",
+        "2": "LED_SINK"
+      },
+      "purpose": "Shared LED current limiter; keep at least 1k during initial test"
+    },
+    {
+      "ref": "R11",
+      "value": "10k",
+      "kind": "R",
+      "pins": {
+        "1": "RUN",
+        "2": "LED_BASE"
+      },
+      "purpose": "Common LED switch base resistor"
+    },
+    {
+      "ref": "Q3",
+      "value": "BC547B",
+      "kind": "Q",
+      "pins": {
+        "B": "LED_BASE",
+        "C": "LED_SINK",
+        "E": "GND"
+      },
+      "purpose": "Switches all LEDs off at timeout"
+    },
+    {
+      "ref": "C7",
+      "value": "100n",
+      "kind": "C",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Close to U1 supply pins"
+    },
+    {
+      "ref": "C8",
+      "value": "100n",
+      "kind": "C",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Close to U2 supply pins"
+    },
+    {
+      "ref": "C9",
+      "value": "100n",
+      "kind": "C",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Close to U3 supply pins"
+    },
+    {
+      "ref": "C10",
+      "value": "100u / 16V",
+      "kind": "C",
+      "pins": {
+        "+": "+5V",
+        "-": "GND"
+      },
+      "purpose": "Supply bulk capacitor"
+    },
+    {
+      "ref": "C11",
+      "value": "100n",
+      "kind": "C",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Close to PIR supply pads"
+    }
+  ]
+}

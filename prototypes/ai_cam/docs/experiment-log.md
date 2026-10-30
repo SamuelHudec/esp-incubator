@@ -90,6 +90,133 @@ Working decision: continue optimizing inference independently of model quality;
 monitor stream FPS and errors during subsequent hardware runs. Current observed
 operation is approximately 23 FPS video plus 2.5 detections/s.
 
+## Dataset capture page — 2026-10-21
+
+Added `/camera`: live raw stream without inference and a **Take photo** button.
+Downloads are created by the browser from the currently displayed frame at native
+resolution, re-encoded as JPEG quality 0.95, with UTC timestamp and sequence names.
+Browser settings determine the destination; Downloads is typical, not guaranteed.
+No additional camera-buffer owner, ESP image storage or capture endpoint was added.
+Browser logic checks covered successful download requests, encoding failure,
+native dimensions and disconnect handling. Arduino compilation passed; actual
+browser MJPEG capture and file saving remain to be verified on the user's device.
+
+User also reports occasional Wi-Fi dips. This is an additional observation, not
+proof that Wi-Fi caused the earlier isolated stream slowdown.
+
+## Stable detection dashboard — 2026-10-30
+
+Replaced the changing inline diagnostics sentence on `/inf` with three fixed-grid
+fields: stream FPS (last five-second sent-frame window), inference milliseconds
+and maximum candidate score. Monospaced tabular digits, fixed precision and a
+reserved error-message area prevent routine status transitions from shifting the
+layout. Running/threshold/box counts and other diagnostics remain in the JSON and
+serial logs, but are omitted from the normal page display. Missing or stale
+inference results show a dash; request failures clear the displayed measurements.
+JavaScript checks cover formatting, status transitions, stale data and errors.
+Actual browser/device appearance remains to be checked after flashing.
+
+## Vertical metrics panel — 2026-10-30
+
+Changed the detection dashboard to five separate fixed-height rows: stream FPS,
+inference milliseconds, maximum score, CPU0 and CPU1 utilization. Values occupy
+an aligned fixed-width column with monospaced digits. CPU readings reuse the
+existing five-second serial measurement; no additional CPU sampling was added.
+Unavailable readings show a dash. JSON and serial diagnostic details remain.
+
+## Compact serial summaries — 2026-10-30
+
+Added compile-time NORMAL/PROFILE logging in `firmware/logging_config.h`.
+NORMAL prints synchronized stream/AI rows every five seconds (including measured
+AI completion FPS and mean latency); memory moves to once per minute. PROFILE
+retains phase/layer timings and detailed stream metrics. Window statistics are
+copied/reset atomically; serial printing moved out of the inference worker.
+Errors are reported as nonzero window counts with the latest inference error
+stage. Constant camera/CPU/threshold settings print at startup. Frame scheduling
+and inference arithmetic are unchanged; new behavior needs hardware verification.
+
+## SD capture replaces browser downloads — 2026-10-30
+
+`/camera` now requests saving the next original JPEG to `/photos/` on the onboard
+SD card. The port-81 control server accepts a POST and exposes pending/saving/
+saved/error status via GET; browser confirmation follows completion, not merely
+request acceptance. The stream task remains the only camera-buffer owner and
+SD writer. One-bit SDMMC, no autoformat, collision-checked filenames and temporary
+files preserve existing photos. Writes briefly pause stream throughput.
+UI checks passed for confirmed save and unavailable card; physical FAT32 card
+mounting, actual JPEG contents and persistence across reboot remain unverified.
+See `sd-capture.md` for the hardware assumptions and verification procedure.
+This supersedes the browser-download workflow recorded earlier.
+
+## Inferences per second on the dashboard — 2026-10-30
+
+Replaced the browser's inference-duration row with IPS (successful inference
+completions per actual elapsed second over the shared five-second metrics window).
+This is measured throughput, not 1000 divided by the last inference duration.
+The JSON adds `ips` and retains `latency_ms`; serial latency and profiling timings
+remain unchanged. Zero completions displays 0.00 even when the last result is stale;
+unavailable/initial readings display a dash.
+
+## Memory utilization dashboard — 2026-10-30
+
+Added separate internal-RAM and PSRAM heap-used percentages alongside IPS. Each
+uses free/total heap from the same capability pool, sampled every five seconds.
+This avoids merging scarce internal memory with the larger PSRAM pool. Values
+are heap utilization, not total physical-memory utilization; unavailable pools
+show a dash. Existing serial memory reporting remains unchanged.
+
+## SD startup diagnostics — 2026-10-30
+
+User reported the combined mount/directory failure message. Split startup stages
+and added successful-mount capacity/usage details. Existing `/photos` is checked
+to be an accessible directory, rather than treating any existing file as ready.
+Removed the unsupported assumption that mount failure implies FAT32 formatting
+is needed. Hardware root cause remains unknown pending card details and startup
+logs. No card format, voltage, pin or SD timing changes were made.
+
+## SD initialization timeout observed — 2026-10-30
+
+User supplied `sdmmc_init_ocr: send_op_cond (1) returned 0x107` followed by
+`sdmmc_card_init failed (0x107)`. In the installed core, 0x107 is ESP_ERR_TIMEOUT.
+Failure is during card protocol initialization, before filesystem mounting or
+creation of `/photos`. Card filesystem format is therefore not established as
+the cause; do not recommend formatting from this log alone. Investigate powered-off
+reseating, computer readability and an alternate known-working card first. Card
+capacity/model and comparative results are still missing. Driver advice about
+pull-ups is generic, not proof of a missing resistor. No electrical modifications
+or speculative SD clock changes were made.
+
+## DAT3 pull-up initialization experiment — 2026-10-30
+
+User confirmed the computer reads the card and can create `/photos`; no alternate
+card is available. Added INPUT_PULLUP on onboard DAT3/GPIO13 before SDMMC begin,
+based on Espressif pull-state requirements and matching AI Thinker issue #4680.
+This is a diagnostic hypothesis, not a confirmed repair. GPIO13 must be free of
+external peripherals. No filesystem, autoformat, clock, GPIO12 or LED changes.
+Requires a full card/board power-cycle and hardware startup log comparison.
+
+## Upload boot-mode failure after SD tests — 2026-10-30
+
+User reports esptool wrong boot mode 0xb and unusually bright LED during upload.
+Suspect SD/socket influence on GPIO2 strapping; unconfirmed pending upload with
+card removed. Advised powered-off card removal and the established GPIO0-low
+upload procedure, then powered-off reinsertion for normal operation. No flash
+contents, pins, pull-ups or supply changes were made in response. LED cause is
+unknown.
+
+## SD capture hardware confirmed; dashboard encoding — 2026-10-30
+
+User confirmed upload succeeds with the SD card removed and actual photo saving
+on the inserted card works. Adopt powered-off SD removal during flashing for this
+setup. Card influence on boot strapping is consistent with the symptoms; this does
+not prove the earlier SD initialization timeout had the same cause or isolate the
+DAT3 pull-up's effect. Cross-reboot file retention was not separately reported.
+
+User observed `Â·` in `/inf` labels. The inference page lacked an explicit charset;
+added an early UTF-8 meta declaration and `text/html; charset=utf-8` response type.
+The camera capture page already declares UTF-8. Browser verification after flashing
+is pending; no inference or metric computation changes were made.
+
 ## Future entry format
 
 For each change record:

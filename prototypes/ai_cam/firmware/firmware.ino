@@ -6,7 +6,9 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
+#include "sd_capture.h"
 #include "ai_detection.h"
+#include "camera_page.h"
 
 // AI-Thinker ESP32-CAM / OV2640. Pin sources and power notes: README.md.
 static httpd_handle_t server = nullptr;
@@ -55,31 +57,66 @@ static void reportMetrics() {
   double busy[portNUM_PROCESSORS];
   readCpuMetrics(busy, elapsed);
 #endif
-  Serial.printf("METRICS window=%.2fs image=%ux%u acquired=%lu sent=%lu "
-                "fps=%.2f jpeg_avg=%.1fKiB payload=%.1fKiB/s "
-                "acquire_avg=%.2fms send_avg=%.2fms errors=%lu\n",
-                elapsed / 1e6, (unsigned)width, (unsigned)height,
-                (unsigned long)acquired, (unsigned long)sent, sent * 1e6 / elapsed,
-                sent ? bytes / (1024.0 * sent) : 0.0, bytes * 1e6 / (1024.0 * elapsed),
-                acquired ? captureTime / (1000.0 * acquired) : 0.0,
-                attempts ? networkTime / (1000.0 * attempts) : 0.0,
-                (unsigned long)errors);
+  const size_t ramTotal=heap_caps_get_total_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  const size_t ramFree=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+  const size_t psramTotal=heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+  const size_t psramFree=heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  portENTER_CRITICAL(&aiMux);
+  aiRamUsed=ramTotal ? 100.0*(1.0-(double)ramFree/ramTotal) : -1;
+  aiPsramUsed=psramTotal ? 100.0*(1.0-(double)psramFree/psramTotal) : -1;
+  aiStreamFps=sent * 1e6 / elapsed;
 #ifdef HAS_CPU_METRICS
-  for (int core = 0; core < portNUM_PROCESSORS; ++core) {
-    Serial.printf("cpu%d_busy=%.1f%% ", core, busy[core]);
-  }
-#else
-  Serial.print("cpu_busy=unavailable ");
+  aiCpu0=busy[0];
+  aiCpu1=portNUM_PROCESSORS>1 ? busy[1] : -1;
 #endif
-  Serial.printf("cpu_clock=%luMHz internal_free=%u internal_min=%u "
-                "internal_largest=%u psram_free=%u psram_min=%u rssi=%lddBm\n",
-                (unsigned long)ESP.getCpuFreqMHz(),
-                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
-                (long)WiFi.RSSI());
+  AiLogWindow inference=aiLog;aiLog={};
+  aiIps=inference.samples * 1e6 / elapsed;
+  bool running=aiRunning;
+  float score=aiMaxScore;
+  const char *lastError=aiLastError;
+  float cpu0=aiCpu0,cpu1=aiCpu1;
+  portEXIT_CRITICAL(&aiMux);
+  Serial.printf("STREAM fps=%5.2f send=%6.2fms ",sent*1e6/elapsed,
+                attempts ? networkTime/(1000.0*attempts) : 0.0);
+  if(cpu0>=0) Serial.printf("cpu0=%5.1f%% cpu1=%5.1f%% ",cpu0,cpu1);
+  else Serial.print("cpu=unavailable ");
+  Serial.printf("rssi=%lddBm\n",(long)WiFi.RSSI());
+  if(!aiReady) Serial.println("AI     unavailable");
+  else if(!inference.offered && !inference.samples && !inference.errors && !running) Serial.println("AI     off");
+  else if(inference.samples) {
+    Serial.printf("AI     fps=%5.2f inf=%6.1fms score=",inference.samples*1e6/elapsed,
+                  inference.total/(1000.0*inference.samples));
+    if(score>=0) Serial.printf("%.2f\n",score);else Serial.println("--");
+  } else Serial.println("AI     fps= 0.00 inf=    --   score=--");
+  if(errors) Serial.printf("ERROR  stream count=%lu (capture/send; disconnects may count)\n",(unsigned long)errors);
+  if(inference.errors) Serial.printf("ERROR  inference count=%lu last=%s\n",(unsigned long)inference.errors,lastError);
+#if LOG_PROFILE
+  Serial.printf("PROFILE window=%.2fs image=%ux%u acquired=%lu sent=%lu jpeg=%.1fKiB payload=%.1fKiB/s acquire=%.2fms\n",
+                elapsed/1e6,(unsigned)width,(unsigned)height,(unsigned long)acquired,(unsigned long)sent,
+                sent ? bytes/(1024.0*sent) : 0.0,bytes*1e6/(1024.0*elapsed),
+                acquired ? captureTime/(1000.0*acquired) : 0.0);
+#ifdef AI_HAS_MODEL
+  if(inference.samples) {
+    double divisor=1000.0*inference.samples;uint64_t network=0;
+    for(int i=0;i<NN_LAYER_COUNT;i++) network+=inference.layers[i];
+    Serial.printf("AI_TIMING samples=%lu avg_ms jpeg=%.2f preprocess=%.2f network=%.2f yield=%.2f postprocess=%.2f total=%.2f\n",
+                  (unsigned long)inference.samples,inference.jpeg/divisor,inference.pre/divisor,network/divisor,
+                  inference.yield/divisor,inference.post/divisor,inference.total/divisor);
+    Serial.print("AI_LAYERS avg_ms");
+    for(int i=0;i<NN_LAYER_COUNT;i++) Serial.printf(" L%d=%.2f",i,inference.layers[i]/divisor);
+    Serial.println();
+  }
+#endif
+#endif
+  static int64_t lastMemoryLog=0;
+  if(LOG_PROFILE || now-lastMemoryLog>=60000000) {
+    lastMemoryLog=now;
+    Serial.printf("MEM    ram_free=%.1fKiB ram_min=%.1fKiB ram_largest=%.1fKiB psram_free=%.1fKiB\n",
+                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)/1024.0,
+                  heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)/1024.0,
+                  heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)/1024.0,
+                  heap_caps_get_free_size(MALLOC_CAP_SPIRAM)/1024.0);
+  }
 }
 
 static esp_err_t streamVideo(httpd_req_t *request) {
@@ -134,6 +171,7 @@ static esp_err_t streamVideo(httpd_req_t *request) {
     }
     portEXIT_CRITICAL(&metricsMux);
     if (result == ESP_OK && inferenceEnabled) aiSubmit(frame);
+    photoSaveFrame(frame);
     // Always release the buffer, including when the phone disconnects.
     esp_camera_fb_return(frame);
     if (result != ESP_OK) return result;
@@ -183,6 +221,7 @@ void setup() {
     return;
   }
 
+  photoStart();
   WiFi.setHostname(HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -200,8 +239,9 @@ void setup() {
   double initialBusy[portNUM_PROCESSORS];
   readCpuMetrics(initialBusy, 0);
 #endif
-  Serial.printf("Metrics every 5s; JPEG QVGA quality=12 buffers=2 pause=%lums\n",
-                (unsigned long)STREAM_PAUSE_MS);
+  Serial.printf("LOG %s every 5s; image=320x240 JPEG quality=12 buffers=2 pause=%lums cpu=%luMHz threshold=%.2f\n",
+                LOG_PROFILE?"PROFILE":"NORMAL",(unsigned long)STREAM_PAUSE_MS,
+                (unsigned long)ESP.getCpuFreqMHz(),AI_THRESHOLD);
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.max_open_sockets = 2;
   config.lru_purge_enable = true;
@@ -216,6 +256,10 @@ void setup() {
     if (result == ESP_OK) {
       httpd_uri_t page={};page.uri="/inf";page.method=HTTP_GET;page.handler=aiPage;
       result=httpd_register_uri_handler(server,&page);
+    }
+    if (result == ESP_OK) {
+      httpd_uri_t capture={};capture.uri="/camera";capture.method=HTTP_GET;capture.handler=cameraPage;
+      result=httpd_register_uri_handler(server,&capture);
     }
     if (result == ESP_OK) {
       static bool inferenceEnabled=true;
@@ -241,12 +285,16 @@ void setup() {
 }
 
 void loop() {
-  // Print the current address after a Wi-Fi reconnection or DHCP change.
   static IPAddress lastAddress;
-  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != lastAddress) {
-    lastAddress = WiFi.localIP();
-    Serial.printf("Camera address: http://%s/\n", lastAddress.toString().c_str());
+  static bool wasConnected=false;
+  const bool connected=WiFi.status()==WL_CONNECTED;
+  if(connected && (!wasConnected || WiFi.localIP()!=lastAddress)) {
+    lastAddress=WiFi.localIP();
+    Serial.printf("WIFI   connected http://%s/\n",lastAddress.toString().c_str());
+  } else if(!connected && wasConnected) {
+    Serial.println("WIFI   disconnected; reconnecting");
   }
+  wasConnected=connected;
   if (metricsStartUs) reportMetrics();
   delay(100);
 }

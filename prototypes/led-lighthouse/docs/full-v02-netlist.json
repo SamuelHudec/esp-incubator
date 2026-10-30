@@ -1,0 +1,761 @@
+{
+  "revision": "0.2",
+  "date": "2026-10-29",
+  "status": "design reviewed; only manual CD4017 five-LED test user-confirmed",
+  "supply": "regulated 5V only",
+  "parts": [
+    {
+      "ref": "U1",
+      "value": "TLC555IP",
+      "pins": {
+        "1": "GND",
+        "2": "TRIG",
+        "3": "RUN",
+        "4": "ARM",
+        "5": "CTRL1",
+        "6": "TIME",
+        "7": "DISCH1",
+        "8": "+5V"
+      },
+      "purpose": "One-shot timer",
+      "kind": "U"
+    },
+    {
+      "ref": "U2",
+      "value": "TLC555IP",
+      "pins": {
+        "1": "GND",
+        "2": "OSC",
+        "3": "OSC_OUT",
+        "4": "RUN",
+        "5": "CTRL2",
+        "6": "OSC",
+        "7": "DISCH2",
+        "8": "+5V"
+      },
+      "purpose": "LED step oscillator",
+      "kind": "U"
+    },
+    {
+      "ref": "U3",
+      "value": "TLC372CP",
+      "pins": {
+        "1": "DAY",
+        "2": "LUX",
+        "3": "DARK_TH",
+        "4": "GND",
+        "5": "FIX_REF",
+        "6": "RUN_HALF",
+        "7": "IDLE",
+        "8": "+5V"
+      },
+      "purpose": "Darkness comparator and RUN inverter",
+      "kind": "U"
+    },
+    {
+      "ref": "U4",
+      "value": "CD4017BE",
+      "pins": {
+        "1": "STEP5",
+        "2": "STEP1",
+        "3": "STEP0",
+        "4": "STEP2",
+        "5": "NC_5",
+        "6": "NC_6",
+        "7": "STEP3",
+        "8": "GND",
+        "9": "NC_9",
+        "10": "STEP4",
+        "11": "NC_11",
+        "12": "NC_12",
+        "13": "GND",
+        "14": "CLOCK",
+        "15": "COUNT_RESET",
+        "16": "+5V"
+      },
+      "purpose": "Modulo-five LED sequencer",
+      "kind": "U"
+    },
+    {
+      "ref": "R1",
+      "value": "100k",
+      "pins": {
+        "1": "+5V",
+        "2": "LUX"
+      },
+      "purpose": "LDR divider top",
+      "kind": "R"
+    },
+    {
+      "ref": "R2",
+      "value": "100k",
+      "pins": {
+        "1": "LUX",
+        "2": "GND"
+      },
+      "purpose": "Limit LUX to safe comparator input range",
+      "kind": "R"
+    },
+    {
+      "ref": "R3",
+      "value": "1M",
+      "pins": {
+        "1": "DAY",
+        "2": "DARK_TH"
+      },
+      "purpose": "Darkness hysteresis",
+      "kind": "R"
+    },
+    {
+      "ref": "R4",
+      "value": "47k",
+      "pins": {
+        "1": "+5V",
+        "2": "REF_TOP"
+      },
+      "purpose": "Threshold range divider top",
+      "kind": "R"
+    },
+    {
+      "ref": "R5",
+      "value": "47k",
+      "pins": {
+        "1": "REF_TOP",
+        "2": "GND"
+      },
+      "purpose": "Threshold range divider bottom",
+      "kind": "R"
+    },
+    {
+      "ref": "P1",
+      "value": "100k",
+      "pins": {
+        "A": "REF_TOP",
+        "W": "DARK_TH",
+        "B": "GND"
+      },
+      "purpose": "Darkness sensitivity (three terminals)",
+      "kind": "P"
+    },
+    {
+      "ref": "R6",
+      "value": "10k",
+      "pins": {
+        "1": "+5V",
+        "2": "ARM"
+      },
+      "purpose": "Reset pull-up / startup delay",
+      "kind": "R"
+    },
+    {
+      "ref": "R7",
+      "value": "100k",
+      "pins": {
+        "1": "RUN",
+        "2": "RUN_HALF"
+      },
+      "purpose": "RUN divider top",
+      "kind": "R"
+    },
+    {
+      "ref": "R8",
+      "value": "100k",
+      "pins": {
+        "1": "RUN_HALF",
+        "2": "GND"
+      },
+      "purpose": "RUN divider bottom",
+      "kind": "R"
+    },
+    {
+      "ref": "R9",
+      "value": "47k",
+      "pins": {
+        "1": "+5V",
+        "2": "FIX_REF"
+      },
+      "purpose": "IDLE reference top",
+      "kind": "R"
+    },
+    {
+      "ref": "R10",
+      "value": "15k",
+      "pins": {
+        "1": "FIX_REF",
+        "2": "GND"
+      },
+      "purpose": "IDLE reference bottom",
+      "kind": "R"
+    },
+    {
+      "ref": "R11",
+      "value": "10k",
+      "pins": {
+        "1": "+5V",
+        "2": "IDLE"
+      },
+      "purpose": "Open-drain pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R12",
+      "value": "47k",
+      "pins": {
+        "1": "PIR_OUT",
+        "2": "QB1"
+      },
+      "purpose": "PIR input current limit",
+      "kind": "R"
+    },
+    {
+      "ref": "R13",
+      "value": "47k",
+      "pins": {
+        "1": "+5V",
+        "2": "INV"
+      },
+      "purpose": "First inverter pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R14",
+      "value": "47k",
+      "pins": {
+        "1": "INV",
+        "2": "QB2"
+      },
+      "purpose": "Buffer base resistor",
+      "kind": "R"
+    },
+    {
+      "ref": "R15",
+      "value": "47k",
+      "pins": {
+        "1": "+5V",
+        "2": "MOTION_BUF"
+      },
+      "purpose": "Second inverter pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R16",
+      "value": "10k",
+      "pins": {
+        "1": "EDGE",
+        "2": "QB3"
+      },
+      "purpose": "Pulse base current limit",
+      "kind": "R"
+    },
+    {
+      "ref": "R17",
+      "value": "100k",
+      "pins": {
+        "1": "QB3",
+        "2": "GND"
+      },
+      "purpose": "Pulse reset / discharge",
+      "kind": "R"
+    },
+    {
+      "ref": "R18",
+      "value": "10k",
+      "pins": {
+        "1": "+5V",
+        "2": "TRIG"
+      },
+      "purpose": "Timer trigger pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R19",
+      "value": "47k",
+      "pins": {
+        "1": "RUN",
+        "2": "QB4"
+      },
+      "purpose": "Lockout base resistor",
+      "kind": "R"
+    },
+    {
+      "ref": "R20",
+      "value": "220k",
+      "pins": {
+        "1": "+5V",
+        "2": "P3_A"
+      },
+      "purpose": "Minimum timer resistance",
+      "kind": "R"
+    },
+    {
+      "ref": "P3",
+      "value": "1M",
+      "pins": {
+        "A": "P3_A",
+        "W": "TIME",
+        "B": "TIME"
+      },
+      "purpose": "Duration rheostat; strap W to B",
+      "kind": "P"
+    },
+    {
+      "ref": "R21",
+      "value": "10k",
+      "pins": {
+        "1": "+5V",
+        "2": "DISCH2"
+      },
+      "purpose": "Astable RA",
+      "kind": "R"
+    },
+    {
+      "ref": "R22",
+      "value": "10k",
+      "pins": {
+        "1": "DISCH2",
+        "2": "P2_A"
+      },
+      "purpose": "Minimum astable RB",
+      "kind": "R"
+    },
+    {
+      "ref": "P2",
+      "value": "100k",
+      "pins": {
+        "A": "P2_A",
+        "W": "OSC",
+        "B": "OSC"
+      },
+      "purpose": "Step-speed rheostat; strap W to B",
+      "kind": "P"
+    },
+    {
+      "ref": "R23",
+      "value": "47k",
+      "pins": {
+        "1": "OSC_OUT",
+        "2": "QB5"
+      },
+      "purpose": "Clock inverter base resistor",
+      "kind": "R"
+    },
+    {
+      "ref": "R24",
+      "value": "10k",
+      "pins": {
+        "1": "+5V",
+        "2": "CLOCK"
+      },
+      "purpose": "Clock pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R25",
+      "value": "100k",
+      "pins": {
+        "1": "COUNT_RESET",
+        "2": "GND"
+      },
+      "purpose": "Counter reset pull-down",
+      "kind": "R"
+    },
+    {
+      "ref": "R26",
+      "value": "10k",
+      "pins": {
+        "1": "RUN",
+        "2": "QB6"
+      },
+      "purpose": "Common LED switch base resistor",
+      "kind": "R"
+    },
+    {
+      "ref": "R28",
+      "value": "1k",
+      "pins": {
+        "1": "LED_RETURN",
+        "2": "LED_SINK"
+      },
+      "purpose": "Shared LED current limiter; one LED selected at a time",
+      "kind": "R"
+    },
+    {
+      "ref": "LED1",
+      "value": "White LED",
+      "pins": {
+        "A": "STEP0",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Lighthouse position 1",
+      "kind": "LED"
+    },
+    {
+      "ref": "LED2",
+      "value": "White LED",
+      "pins": {
+        "A": "STEP1",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Lighthouse position 2",
+      "kind": "LED"
+    },
+    {
+      "ref": "LED3",
+      "value": "White LED",
+      "pins": {
+        "A": "STEP2",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Lighthouse position 3",
+      "kind": "LED"
+    },
+    {
+      "ref": "LED4",
+      "value": "White LED",
+      "pins": {
+        "A": "STEP3",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Lighthouse position 4",
+      "kind": "LED"
+    },
+    {
+      "ref": "LED5",
+      "value": "White LED",
+      "pins": {
+        "A": "STEP4",
+        "K": "LED_RETURN"
+      },
+      "purpose": "Lighthouse position 5",
+      "kind": "LED"
+    },
+    {
+      "ref": "R38",
+      "value": "100k",
+      "pins": {
+        "1": "+5V",
+        "2": "DAY"
+      },
+      "purpose": "Day comparator pull-up",
+      "kind": "R"
+    },
+    {
+      "ref": "R39",
+      "value": "47k",
+      "pins": {
+        "1": "DAY",
+        "2": "QB12"
+      },
+      "purpose": "Reset transistor base current limit",
+      "kind": "R"
+    },
+    {
+      "ref": "R40",
+      "value": "100",
+      "pins": {
+        "1": "TIME",
+        "2": "DISCH1"
+      },
+      "purpose": "Limit timing-capacitor discharge current",
+      "kind": "R"
+    },
+    {
+      "ref": "Q1",
+      "value": "BC547B",
+      "pins": {
+        "C": "INV",
+        "B": "QB1",
+        "E": "GND"
+      },
+      "purpose": "PIR input inverter",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q2",
+      "value": "BC547B",
+      "pins": {
+        "C": "MOTION_BUF",
+        "B": "QB2",
+        "E": "GND"
+      },
+      "purpose": "Restore positive motion edge",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q3",
+      "value": "BC547B",
+      "pins": {
+        "C": "TRIG",
+        "B": "QB3",
+        "E": "GND"
+      },
+      "purpose": "Short active-low trigger pulse",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q4",
+      "value": "BC547B",
+      "pins": {
+        "C": "QB3",
+        "B": "QB4",
+        "E": "GND"
+      },
+      "purpose": "Ignore motion edges while RUN is high",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q5",
+      "value": "BC547B",
+      "pins": {
+        "C": "CLOCK",
+        "B": "QB5",
+        "E": "GND"
+      },
+      "purpose": "Clock inversion: first step starts at LED1",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q6",
+      "value": "BC547B",
+      "pins": {
+        "C": "LED_SINK",
+        "B": "QB6",
+        "E": "GND"
+      },
+      "purpose": "Common LED return switch; all LEDs off while idle",
+      "kind": "Q"
+    },
+    {
+      "ref": "Q12",
+      "value": "BC547B",
+      "pins": {
+        "C": "ARM",
+        "B": "QB12",
+        "E": "GND"
+      },
+      "purpose": "Daylight resets timer; safely discharges C6",
+      "kind": "Q"
+    },
+    {
+      "ref": "D1",
+      "value": "1N4148",
+      "pins": {
+        "A": "GND",
+        "K": "QB3"
+      },
+      "purpose": "Clamp reverse base voltage on falling motion edge",
+      "kind": "D"
+    },
+    {
+      "ref": "D2",
+      "value": "1N4148",
+      "pins": {
+        "A": "IDLE",
+        "K": "COUNT_RESET"
+      },
+      "purpose": "Reset counter while idle",
+      "kind": "D"
+    },
+    {
+      "ref": "D3",
+      "value": "1N4148",
+      "pins": {
+        "A": "STEP5",
+        "K": "COUNT_RESET"
+      },
+      "purpose": "Return to LED1 after LED5",
+      "kind": "D"
+    },
+    {
+      "ref": "C1",
+      "value": "100n",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Local bypass at U1",
+      "kind": "C"
+    },
+    {
+      "ref": "C2",
+      "value": "100n",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Local bypass at U2",
+      "kind": "C"
+    },
+    {
+      "ref": "C3",
+      "value": "100n",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Local bypass at U3",
+      "kind": "C"
+    },
+    {
+      "ref": "C4",
+      "value": "100n",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Local bypass at U4",
+      "kind": "C"
+    },
+    {
+      "ref": "C5",
+      "value": "100u / 16V",
+      "pins": {
+        "+": "+5V",
+        "-": "GND"
+      },
+      "purpose": "Bulk supply capacitor",
+      "kind": "C"
+    },
+    {
+      "ref": "C6",
+      "value": "100u / 16V",
+      "pins": {
+        "+": "ARM",
+        "-": "GND"
+      },
+      "purpose": "Startup reset delay",
+      "kind": "C"
+    },
+    {
+      "ref": "C7",
+      "value": "100u / 16V",
+      "pins": {
+        "+": "TIME",
+        "-": "GND"
+      },
+      "purpose": "One-shot timing capacitor; leakage must be checked",
+      "kind": "C"
+    },
+    {
+      "ref": "C8",
+      "value": "10n",
+      "pins": {
+        "1": "CTRL1",
+        "2": "GND"
+      },
+      "purpose": "U1 control bypass",
+      "kind": "C"
+    },
+    {
+      "ref": "C9",
+      "value": "10n",
+      "pins": {
+        "1": "CTRL2",
+        "2": "GND"
+      },
+      "purpose": "U2 control bypass",
+      "kind": "C"
+    },
+    {
+      "ref": "C10",
+      "value": "10u / 16V",
+      "pins": {
+        "+": "OSC",
+        "-": "GND"
+      },
+      "purpose": "Step oscillator timing",
+      "kind": "C"
+    },
+    {
+      "ref": "C11",
+      "value": "100n",
+      "pins": {
+        "1": "MOTION_BUF",
+        "2": "EDGE"
+      },
+      "purpose": "Motion edge coupling",
+      "kind": "C"
+    },
+    {
+      "ref": "C12",
+      "value": "10n",
+      "pins": {
+        "1": "COUNT_RESET",
+        "2": "GND"
+      },
+      "purpose": "Stretch self-reset pulse",
+      "kind": "C"
+    },
+    {
+      "ref": "C13",
+      "value": "100n",
+      "pins": {
+        "1": "+5V",
+        "2": "GND"
+      },
+      "purpose": "Bypass near PIR supply",
+      "kind": "C"
+    },
+    {
+      "ref": "C14",
+      "value": "100n",
+      "pins": {
+        "1": "LUX",
+        "2": "GND"
+      },
+      "purpose": "Filter light sensor noise",
+      "kind": "C"
+    },
+    {
+      "ref": "C15",
+      "value": "10u / 16V",
+      "pins": {
+        "+": "QB4",
+        "-": "GND"
+      },
+      "purpose": "Hold busy lockout briefly after RUN falls",
+      "kind": "C"
+    },
+    {
+      "ref": "LDR1",
+      "value": "LDR5516",
+      "pins": {
+        "1": "LUX",
+        "2": "GND"
+      },
+      "purpose": "Keep out of LED beam; no polarity",
+      "kind": "LDR"
+    },
+    {
+      "ref": "J1",
+      "value": "5V input",
+      "pins": {
+        "+": "VIN_5V",
+        "-": "GND"
+      },
+      "purpose": "Verified regulated 5V input; no raw battery connection",
+      "kind": "J"
+    },
+    {
+      "ref": "J2",
+      "value": "SB00312A-1",
+      "pins": {
+        "VCC": "+5V",
+        "OUT": "PIR_OUT",
+        "GND": "GND"
+      },
+      "purpose": "Signal names only; physical pad order not assumed",
+      "kind": "J"
+    },
+    {
+      "ref": "S1",
+      "value": "Power switch",
+      "kind": "SW",
+      "pins": {
+        "1": "VIN_5V",
+        "2": "+5V"
+      },
+      "purpose": "User-supplied power switch"
+    }
+  ]
+}

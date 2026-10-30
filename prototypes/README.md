@@ -8,3 +8,4 @@ minimum documentation skeleton.
 | --- | --- | --- |
 | `2g4-signal-lab` | Planning / wiring | Explore 2.4 GHz activity with ESP32-C3 and nRF24L01+ |
 
+| `fanet-receiver` | Planning / BLE probe | Receive FANET traffic and bridge it to FlySkyHy |

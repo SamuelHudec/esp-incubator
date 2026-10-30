@@ -3,6 +3,20 @@
 See the [experiment log](docs/experiment-log.md) for completed changes, timing
 results, the stream/inference comparison and outstanding optimization work.
 
+## Collect training images on SD
+
+With power off, insert a FAT32 microSD card in the onboard socket, then boot and
+look for `SD ready`. Open `http://ai-cam.local/camera` with other stream tabs
+closed and press **Save photo to SD**. Wait for `Saved to SD: /photos/...jpg`.
+The original camera JPEG is saved on the card at the configured 320x240 resolution;
+nothing downloads to the viewing device. Names are unique random identifiers,
+not timestamps. No inference runs in this view.
+
+Saving requests the next camera frame and briefly pauses the stream while writing.
+The result may differ from the preview because of network latency. Failed or
+missing cards produce an error; the firmware never formats cards automatically.
+Power off before removing the card. See [SD setup and verification](docs/sd-capture.md).
+
 ## First run
 
 Open [firmware.ino](firmware/firmware.ino) in Arduino IDE. The sketch now includes
@@ -291,7 +305,8 @@ already carries these connections; no external camera jumpers are needed.
   during normal operation. A programmer may handle this automatically; consult
   its own instructions. See Espressif's
   [ESP32 boot mode guide](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html).
-- The firmware leaves the flash LED and microSD interface unused. Brownout
+- The firmware leaves the flash LED unused; the microSD socket uses one-bit
+  SDMMC for on-demand photo capture (see [SD notes](docs/sd-capture.md)). Brownout
   detection remains enabled; fix the power supply if brownout resets occur.
 - The AI Thinker Arduino board profile uses a 4 MB flash layout. The seller currently lists
   8 MB while the older manufacturer specification lists 4 MB. Check the actual
@@ -914,3 +929,46 @@ stream handler occupies its HTTP server until disconnect is detected. Allow one
 metrics window to settle, then compare a minute per mode with the same scene and
 network. The serial line `Stream started: inference=on/off` confirms the mode.
 These routes supersede earlier notes that all streams trigger inference.
+
+### Compact detection display
+
+The `/inf` viewer shows five stable rows: stream FPS (last five-second server
+send average, not browser-rendered FPS), inferences per second (IPS, completed in the last five-second window), maximum candidate score, and CPU0/CPU1 utilization (the same five-second
+readings as the serial log). Routine status/threshold/count fields are hidden from
+this panel but remain available in serial logs and `/detections`. Errors use a
+reserved area. Missing or older-than-two-second inference results show a dash.
+
+## Serial logging modes (2026-10-30)
+
+Set `LOG_PROFILE` in `firmware/logging_config.h` and rebuild:
+
+- `0` (NORMAL, default): aligned `STREAM` and `AI` rows every five seconds;
+  `MEM` once per minute. Errors are aggregated per window and emitted only when
+  nonzero. Startup configuration and connection/mode events remain visible.
+- `1` (PROFILE): additionally emit stream counters, JPEG size, payload, acquisition
+  timing, `AI_TIMING`, `AI_LAYERS`, and memory every window.
+
+This supersedes earlier serial format descriptions. The JSON endpoint and browser
+panel retain their diagnostics. The worker no longer prints periodic rows: the
+main reporting task snapshots/resets AI statistics under the existing lock and
+prints them alongside stream metrics. AI FPS counts successful completions divided
+by the actual window length; `inf` averages sample-to-result latency for those
+completions. `score` is the latest candidate score, not a window average. With no
+inference activity, print `AI off`; missing initialization prints `AI unavailable`.
+A window crossing a stream-mode change may contain completions from the old mode.
+`MEM` uses KiB and omits the unverified PSRAM minimum statistic.
+
+Inference only receives frames from `/stream-inf`. Each successfully sent frame
+is offered, but only a free worker slot accepts it; no frame backlog is created.
+At 23 video FPS and 2.5 AI FPS this is roughly one analyzed frame per nine video
+frames, not a fixed sampling ratio.
+
+The browser IPS row measures successful completions per second, not reciprocal
+latency. A completed inference with no detected object still counts. Zero throughput
+displays 0.00; startup/unavailable readings show a dash. Serial `inf` stays in ms.
+
+The dashboard also shows internal RAM and PSRAM heap utilization separately,
+updated every five seconds: `100 * (1 - free_heap / total_heap)` for each memory
+capability. These are allocator heap percentages, not percentages of all physical
+chip memory (static/reserved memory is outside that denominator). Unknown or
+absent pools display a dash.

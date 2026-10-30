@@ -24,3 +24,5 @@ Store sensitive data in ignored files such as `secrets.h`, `secrets.yaml`, or
 
 - [2.4 GHz Signal Lab](prototypes/2g4-signal-lab/README.md) — ESP32-C3 a
   nRF24L01+ PA/LNA
+
+- [FANET Receiver](prototypes/fanet-receiver/README.md) — ESP32 BLE/FANET feasibility and bench probe
