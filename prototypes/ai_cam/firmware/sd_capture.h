@@ -68,20 +68,19 @@ static esp_err_t photoResponse(httpd_req_t *req) {
   httpd_resp_set_type(req,"application/json");
   return httpd_resp_send(req,body,HTTPD_RESP_USE_STRLEN);
 }
-static esp_err_t photoRequest(httpd_req_t *req) {
-  // Accept browser writes only from this camera's port-80/81 pages.
+static bool cameraOriginAllowed(httpd_req_t *req) {
   char origin[128]={},host[96]={};
   if(httpd_req_get_hdr_value_str(req,"Origin",origin,sizeof(origin))!=ESP_OK ||
-     httpd_req_get_hdr_value_str(req,"Host",host,sizeof(host))!=ESP_OK) {
-    return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Missing camera origin");
-  }
+     httpd_req_get_hdr_value_str(req,"Host",host,sizeof(host))!=ESP_OK)return false;
   char *port=strchr(host,':');if(port)*port=0;
   char allowed[128],allowed80[128],allowed81[128];
   snprintf(allowed,sizeof(allowed),"http://%s",host);
   snprintf(allowed80,sizeof(allowed80),"http://%s:80",host);
   snprintf(allowed81,sizeof(allowed81),"http://%s:81",host);
-  if(strcmp(origin,allowed)&&strcmp(origin,allowed80)&&strcmp(origin,allowed81))
-    return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Use the camera capture page");
+  return !strcmp(origin,allowed)||!strcmp(origin,allowed80)||!strcmp(origin,allowed81);
+}
+static esp_err_t photoRequest(httpd_req_t *req) {
+  if(!cameraOriginAllowed(req))return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Use the camera capture page");
   portENTER_CRITICAL(&photoMux);
   photoExpire();
   bool busy=!strcmp(photoState,"pending")||!strcmp(photoState,"saving");
@@ -98,6 +97,7 @@ static void photoSaveFrame(const camera_fb_t *frame) {
   portENTER_CRITICAL(&photoMux);
   photoExpire();
   bool requested=!strcmp(photoState,"pending");
+  if(requested && !lightPhotoSettled())requested=false;
   uint32_t id=photoId;
   if(requested) photoState="saving";
   portEXIT_CRITICAL(&photoMux);

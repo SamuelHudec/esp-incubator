@@ -217,6 +217,46 @@ added an early UTF-8 meta declaration and `text/html; charset=utf-8` response ty
 The camera capture page already declares UTF-8. Browser verification after flashing
 is pending; no inference or metric computation changes were made.
 
+## Automatic illumination research — 2026-10-30
+
+Reviewed primary project code for PWM, image-based night detection and exposure
+settling. See [illumination research](illumination-research.md) for concrete source
+parameters and proposed adaptations. Found established 5 kHz/8-bit PWM settings,
+but no universal validated face-detection brightness target. Some auto-lamp modes
+only follow stream activity. No LED control firmware changes were made in this
+research step; initial duty, feedback timing and thresholds still need board tests.
+
+## Manual and automatic illumination implemented — 2026-10-30
+
+Added a master LIGHT_ENABLED setting and tuning constants in firmware.ino.
+Raw `/` keeps LED off; `/camera` now uses a distinct Manual stream and slider;
+`/inf` runs Auto from existing preprocessed input. PWM uses separate LEDC timer
+1/channel2 at 5kHz/8bits on GPIO4; initial cap25%, steps8, deadband20–35%, settling2s.
+These feedback values are trial settings, not externally validated tuning.
+Validation: all 17 tests passed, including host checks for master Off, stream
+teardown, heartbeat timeout and controller limits. Manual UI/SD request checks
+and Arduino core 3.3.12 compilation passed. No upload was performed.
+Stream teardown and a four-second heartbeat turn the lamp off. Photo saving waits
+for light settling. Added origin-checked port81 light controls and UI disable/error
+states. Tests/compilation are recorded below; physical LED/SD coexistence and
+model-quality effects remain unverified. See [illumination](illumination.md).
+
+## Illumination glare feedback — 2026-10-30
+
+User confirmed illumination control works as intended, but perceived direct LED
+glare with little image-brightness benefit. Lowered the shared manual/auto cap
+from 25% to 5% PWM and auto step from 8 to 2 counts. Camera exposure, thresholds
+and model settings remain unchanged. Revised brightness and actual image/detection
+benefit need a new hardware comparison; initial functional confirmation does not
+establish an improvement in image quality.
+
+## Illumination setting reduction reverted — 2026-10-30
+
+At the user's request, reverted only the latest brightness reduction: the shared
+cap is again 25% PWM and the auto step is again 8 counts. The user will continue
+testing and collecting data with the original illumination settings. The glare
+observation remains recorded; no quality conclusion or further tuning is implied.
+
 ## Future entry format
 
 For each change record:

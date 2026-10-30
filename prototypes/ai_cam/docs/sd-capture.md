@@ -15,7 +15,8 @@ must be checked against their own schematic before use.
 | DAT3 (initialization bias only) | 13 |
 
 Use one-bit mode so SD traffic does not use DAT1/flash-LED GPIO4, DAT2 GPIO12 or
-DAT3 GPIO13. GPIO4 is not configured or driven by this feature.
+DAT3 GPIO13. The illumination feature now uses GPIO4 for PWM; keep SD transfers in one-bit
+mode and verify saving with the LED on (see [illumination](illumination.md)).
 Sources: [AI Thinker schematic](https://docs.ai-thinker.com/_media/esp32/docs/esp32_cam_sch.pdf)
 (manufacturer URL now redirects; schematic mirrored in
 [Seeed's archive](https://github.com/SeeedDocument/forum_doc/blob/master/reg/ESP32_CAM_V1.6.pdf)),
@@ -99,7 +100,7 @@ Source: [Espressif boot-mode selection](https://docs.espressif.com/projects/espt
 The new GPIO13 input pull-up runs only in the application after boot, so it does
 not run inside the ROM serial downloader. A newly bright LED during a failed
 connection is an additional symptom, not a diagnosed cause; GPIO4 is shared with
-SD DAT1 but remains unconfigured by our one-bit capture code.
+SD DAT1. The later illumination feature configures GPIO4 explicitly after boot.
 
 ## Hardware observation — 2026-10-30
 

@@ -6,6 +6,14 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
+// Master Off overrides manual and automatic illumination. Edit here and rebuild.
+static constexpr bool LIGHT_ENABLED=true;
+static constexpr uint8_t LIGHT_MAX_PERCENT=25; // Initial test cap, not a thermal rating.
+static constexpr uint8_t LIGHT_AUTO_STEP=8; // PWM counts (0..255) per adjustment.
+static constexpr uint32_t LIGHT_SETTLE_MS=2000;
+static constexpr float LIGHT_DARK_PERCENT=20.0f,LIGHT_BRIGHT_PERCENT=35.0f;
+static_assert(LIGHT_MAX_PERCENT<=100 && LIGHT_AUTO_STEP>0,"Invalid light settings");
+#include "illumination.h"
 #include "sd_capture.h"
 #include "ai_detection.h"
 #include "camera_page.h"
@@ -120,7 +128,9 @@ static void reportMetrics() {
 }
 
 static esp_err_t streamVideo(httpd_req_t *request) {
-  const bool inferenceEnabled=request->user_ctx!=nullptr;
+  const LightMode mode=request->user_ctx?*static_cast<const LightMode*>(request->user_ctx):LightMode::Off;
+  const bool inferenceEnabled=mode==LightMode::Auto;
+  LightStreamGuard lightSession(mode);
   Serial.printf("Stream started: inference=%s\n",inferenceEnabled?"on":"off");
   esp_err_t result = httpd_resp_set_type(
       request, "multipart/x-mixed-replace;boundary=frame");
@@ -128,6 +138,7 @@ static esp_err_t streamVideo(httpd_req_t *request) {
   httpd_resp_set_hdr(request, "Cache-Control", "no-store");
 
   while (true) {
+    lightStreamHeartbeat();
     int64_t captureStart = esp_timer_get_time();
     camera_fb_t *frame = esp_camera_fb_get();
     uint64_t captureElapsed = esp_timer_get_time() - captureStart;
@@ -221,6 +232,7 @@ void setup() {
     return;
   }
 
+  lightStart();
   photoStart();
   WiFi.setHostname(HOSTNAME);
   WiFi.mode(WIFI_STA);
@@ -262,11 +274,18 @@ void setup() {
       result=httpd_register_uri_handler(server,&capture);
     }
     if (result == ESP_OK) {
-      static bool inferenceEnabled=true;
+      static const LightMode inferenceMode=LightMode::Auto;
       httpd_uri_t inferenceStream={};inferenceStream.uri="/stream-inf";
       inferenceStream.method=HTTP_GET;inferenceStream.handler=streamVideo;
-      inferenceStream.user_ctx=&inferenceEnabled;
+      inferenceStream.user_ctx=const_cast<LightMode*>(&inferenceMode);
       result=httpd_register_uri_handler(server,&inferenceStream);
+    }
+    if (result == ESP_OK) {
+      static const LightMode manualMode=LightMode::Manual;
+      httpd_uri_t manualStream={};manualStream.uri="/stream-camera";
+      manualStream.method=HTTP_GET;manualStream.handler=streamVideo;
+      manualStream.user_ctx=const_cast<LightMode*>(&manualMode);
+      result=httpd_register_uri_handler(server,&manualStream);
     }
     if (result != ESP_OK) httpd_stop(server);
   }
@@ -285,6 +304,7 @@ void setup() {
 }
 
 void loop() {
+  lightTick();
   static IPAddress lastAddress;
   static bool wasConnected=false;
   const bool connected=WiFi.status()==WL_CONNECTED;

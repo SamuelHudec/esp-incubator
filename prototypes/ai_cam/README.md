@@ -305,7 +305,8 @@ already carries these connections; no external camera jumpers are needed.
   during normal operation. A programmer may handle this automatically; consult
   its own instructions. See Espressif's
   [ESP32 boot mode guide](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html).
-- The firmware leaves the flash LED unused; the microSD socket uses one-bit
+- The flash LED is controlled via a dedicated PWM timer; see
+  [illumination modes and verification](docs/illumination.md). The microSD socket uses one-bit
   SDMMC for on-demand photo capture (see [SD notes](docs/sd-capture.md)). Brownout
   detection remains enabled; fix the power supply if brownout resets occur.
 - The AI Thinker Arduino board profile uses a 4 MB flash layout. The seller currently lists
@@ -972,3 +973,13 @@ updated every five seconds: `100 * (1 - free_heap / total_heap)` for each memory
 capability. These are allocator heap percentages, not percentages of all physical
 chip memory (static/reserved memory is outside that denominator). Unknown or
 absent pools display a dash.
+
+## Illumination modes
+
+Configure the master `LIGHT_ENABLED` switch near the top of
+`firmware/firmware.ino`. When false, light stays off regardless of stream mode.
+`/camera` has a manual brightness slider; `/inf` automatically adjusts from image
+brightness; `/` keeps light off. Duty limit is 25%, with slow automatic
+steps and a two-second settling interval. New sessions start at zero. Close the
+old viewer before switching modes. See [parameters and verification](docs/illumination.md).
+This introduces GPIO4 PWM; LED/SD coexistence and exposure tuning need a board test.

@@ -71,6 +71,7 @@ static void aiWorker(void *) {
       preUs=esp_timer_get_time()-phaseStart;
     }
     if(ok) {
+      lightObserve(aiA,NN_INPUT_SIZE,aiSampleTime);
       int8_t *head=aiA,*output=aiB;
       for(int i=0;i<NN_LAYER_COUNT;i++) {
         phaseStart=esp_timer_get_time();
@@ -218,7 +219,7 @@ static void aiStart() {
 #else
   Serial.println("Neural network model missing; copy exported nn_model.h into neuralnet/.");
 #endif
-  httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();cfg.server_port=81;cfg.ctrl_port=32769;cfg.max_uri_handlers=4;
+  httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();cfg.server_port=81;cfg.ctrl_port=32769;cfg.max_uri_handlers=6;
   // JSON float formatting and HTTP calls need stack headroom.
   cfg.stack_size=8192;
   if(httpd_start(&aiHttp,&cfg)==ESP_OK) {
@@ -226,7 +227,9 @@ static void aiStart() {
     httpd_uri_t detections={};detections.uri="/detections";detections.method=HTTP_GET;detections.handler=aiDetections;
     httpd_uri_t photo={};photo.uri="/capture";photo.method=HTTP_POST;photo.handler=photoRequest;
     httpd_uri_t photoStatus={};photoStatus.uri="/capture";photoStatus.method=HTTP_GET;photoStatus.handler=photoResponse;
-    if(httpd_register_uri_handler(aiHttp,&photo)!=ESP_OK || httpd_register_uri_handler(aiHttp,&photoStatus)!=ESP_OK || httpd_register_uri_handler(aiHttp,&view)!=ESP_OK || httpd_register_uri_handler(aiHttp,&detections)!=ESP_OK) {
+    httpd_uri_t lamp={};lamp.uri="/light";lamp.method=HTTP_POST;lamp.handler=lightRequest;
+    httpd_uri_t lampStatus={};lampStatus.uri="/light";lampStatus.method=HTTP_GET;lampStatus.handler=lightResponse;
+    if(httpd_register_uri_handler(aiHttp,&lamp)!=ESP_OK || httpd_register_uri_handler(aiHttp,&lampStatus)!=ESP_OK || httpd_register_uri_handler(aiHttp,&photo)!=ESP_OK || httpd_register_uri_handler(aiHttp,&photoStatus)!=ESP_OK || httpd_register_uri_handler(aiHttp,&view)!=ESP_OK || httpd_register_uri_handler(aiHttp,&detections)!=ESP_OK) {
       httpd_stop(aiHttp);aiHttp=nullptr;Serial.println("Detection UI registration failed.");
     } else Serial.println("Detection view: http://ai-cam.local/inf (raw stream without inference: /)");
   } else Serial.println("Detection HTTP server failed; original stream remains on port 80.");
