@@ -257,6 +257,68 @@ cap is again 25% PWM and the auto step is again 8 counts. The user will continue
 testing and collecting data with the original illumination settings. The glare
 observation remains recorded; no quality conclusion or further tuning is implied.
 
+## Architecture discussion plan — 2026-10-30
+
+Reviewed the current Python training/annotation/quantization code, portable C
+pipeline, firmware integration and existing observations. Added the
+[TinyFace architecture and experiment plan](architecture-experiment-plan.md)
+with a verified baseline, a proposed session-separated human-reviewed real
+holdout, one-factor experiment matrix, integration costs and decision gates.
+Primary papers support the hypotheses; their results are not ESP32 predictions.
+Recommended first contrasts are real/synthetic mixing and verified negatives,
+with calibration or assignment selected next from measured failure evidence.
+This is a discussion proposal, not approval to implement every option. Only
+Markdown documentation changed; no training, export, model-header replacement,
+firmware edit, upload or new hardware verification was performed. Existing
+illumination settings and user changes were preserved.
+
+## Architecture plan reviewed and simplified — 2026-10-30
+
+Re-reviewed the proposal against current training, annotation, quantization and
+firmware code and the primary research. Replaced the long execution matrix with
+[three steps](architecture-experiment-plan.md): diagnose a known float/INT8 model
+on real captures, test data composition, then select one architecture change.
+Moved implementation detail and deferred comparisons into an optional
+[technical reference](architecture-reference.md).
+
+Corrections: missing whole-image negatives do not by themselves explain low face
+scores; positive images already supply negative grid cells. A float/INT8 check
+comes before retraining. Assignment changes are conditional, not the default
+third experiment. Removed premature 1% FP / 3-point improvement / 500 ms p95
+acceptance gates and the requirement for a large initial collection. Equal-length
+replacement datasets can use the existing epoch schedule without a new sampler.
+Clarified session/identity leakage, the trainer's automatic test evaluation,
+quantization score shifts versus quality loss, and the distinction between target
+collisions and an absolute detector recall bound. Hardware and final quality
+claims still require measurements. Documentation only; no training, export,
+firmware changes or hardware tests were performed.
+
+## Real-first mixed dataset sampling — 2026-11-02
+
+Added `--real-input` and `--synthetic-input` to the annotator. Real images take
+priority within `--count`: include all when they fit, otherwise sample only real
+images; randomly fill remaining places from synthetic data. Console and summary
+report per-source available/selected counts and annotation outcomes. Existing
+single-directory `--input` remains supported. Selection does not copy images.
+
+Every selected real image is retained for manual review, including teacher misses
+and unreadable files. `--finalize` validates reviewed boxes/confirmed negatives
+and creates the manifest without rerunning detection. Top-level real capture
+folders stay intact across splits, with at least three selected groups required;
+exact image copies crossing splits are rejected. Near-duplicate and identity
+grouping remain the user's responsibility. Selection counts precede annotation;
+synthetic misses can reduce final dataset size. Training reports/montage labels
+now identify reviewed references instead of labeling every test as teacher-only.
+See the [mixed-data workflow](../neuralnet-training/README.md#mix-real-camera-images-with-a-synthetic-pool).
+
+Verification: all 22 Python/host-C tests passed, including new sampling overflow,
+shortage, repeatability, negative loading, group isolation, copy leakage and a
+mocked end-to-end annotation/review/finalization test. The latter checks that
+teacher misses and unreadable real images are retained, dropped rows are rejected,
+and corrected boxes survive export. No real-data annotation/training run, teacher
+download, firmware modification or upload was performed. The suite includes its
+existing tiny synthetic learning test, not a face-model training experiment.
+
 ## Future entry format
 
 For each change record:

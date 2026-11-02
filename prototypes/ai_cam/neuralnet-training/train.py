@@ -167,7 +167,9 @@ def main():
     model = load_model(out/'best.pt', args.device)
     test_loader = DataLoader(test, batch_size=args.batch_size, collate_fn=collate)
     metrics = evaluate(model, test_loader, args.device, args.threshold)
-    metrics['reference'] = 'teacher pseudo-labels, not human ground truth'
+    reviewed = any(row.get('annotation_source') == 'human-reviewed' for row in test.records)
+    metrics['reference'] = ('human-reviewed real labels; any synthetic labels are teacher pseudo-labels'
+                            if reviewed else 'teacher pseudo-labels, not human ground truth')
     (out/'test_metrics.json').write_text(json.dumps(metrics, indent=2))
     teacher_rows, student_rows = [], []
     with torch.inference_mode():
@@ -183,7 +185,7 @@ def main():
     left, right = render_montage(teacher_rows), render_montage(student_rows)
     comparison = np.concatenate([left, right], axis=1)
     banner = np.full((40,comparison.shape[1],3),32,np.uint8)
-    for text,x in [('YuNet teacher',8),('TinyFace best.pt',left.shape[1]+8)]:
+    for text,x in [('Reference labels' if reviewed else 'YuNet teacher',8),('TinyFace best.pt',left.shape[1]+8)]:
         cv2.putText(banner,text,(x,27),cv2.FONT_HERSHEY_SIMPLEX,.7,(255,255,255),1)
     if not cv2.imwrite(str(out/'test_comparison.jpg'),np.concatenate([banner,comparison])):
         raise RuntimeError('Cannot save test comparison')

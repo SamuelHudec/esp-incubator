@@ -67,6 +67,107 @@ cells, AdamW, gradient clipping, random horizontal flips and brightness/contrast
 augmentation. Learning rate follows an epoch-wise cosine schedule; multi-scale augmentation
 is not implemented.
 
+## Mix real camera images with a synthetic pool
+
+Real images take priority within the **total sample size**. With `--count 1000`,
+150 real images means all 150 real plus 850 random synthetic images. With 1,200
+real images, select 1,000 random real images and no synthetic images. Equal
+real/total counts also use real images only. If the combined pool is too small,
+use everything available and print the counts. Omit `--count` to select everything
+from both directories. Selection is repeatable with the same inventory and seed.
+
+Run from this training directory:
+
+```sh
+uv run autolabel.py --real-input /absolute/path/to/camera-photos --synthetic-input /absolute/path/to/synthetic-faces --count 1000 --seed 42 --out data/mixed-1000
+```
+
+The console and `summary.json` report available/selected counts per source, plus
+teacher detections, misses and errors. Count applies **before annotation**, not
+to the final usable dataset. Files remain in place. The two roots must be separate
+and non-nested; output must be new and outside both input trees. Paths reachable
+from both sources count as real only. The original `--input` mode remains supported.
+
+### Real capture groups
+
+Put independent real capture groups in top-level subdirectories:
+
+```text
+camera-photos/
+  morning-session/
+    photo01.jpg
+    photo02.jpg
+  evening-session/
+    photo03.jpg
+  another-day/
+    photo04.jpg
+```
+
+A whole group stays in one split: train, validation or test. Nested directories
+belong to their top-level group; files directly in the root form a single group.
+Keep adjacent frames, near duplicates and paired light settings together. Combine
+related sessions under one group where needed; folder names alone do not prove
+independence. Use disjoint people where possible; otherwise do not claim unseen
+identity generalization.
+
+Finalization needs at least **three selected real groups**, so each split contains
+real examples. With fewer groups, annotation still saves all selected records;
+collect/organize enough independent groups and create a new run. Do not randomly
+divide a burst to bypass this check. Whole-group boundaries take precedence over
+`--test-count` and `--val-fraction`; actual counts can exceed targets. Synthetic
+positives fill remaining targets using seeded image-level sampling. Exact byte
+copies across splits are rejected; near duplicates and synthetic identity overlap
+still require review.
+
+### Review, then create the dataset
+
+Mixed runs initially write review files, **not `dataset.json`**. Every selected
+real image remains in `labels.json`, including teacher misses and unreadable
+files. Synthetic teacher misses remain excluded. `selected.json` lists paths;
+`selection.json` also records each source and capture group.
+
+For every real row in `labels.json`:
+
+1. Inspect the original image. Correct/add all face boxes as normalized
+   `[x1, y1, x2, y2]` coordinates in [0,1]; remove false teacher boxes.
+2. Use `boxes: []` only for a human-confirmed negative. A teacher miss is not a
+   negative. Fix unreadable source files before proceeding.
+3. Set `review_status` to `reviewed`. Preserve image paths, sources and groups;
+   do not delete selected real rows. Real `scores` are regenerated as 1.0 display
+   placeholders at finalization, not calibrated teacher confidences.
+
+Edit **`labels.json`**, not the convenience list `review_no_faces.json`. Review
+includes positive detections, because their boxes can be wrong or incomplete.
+This is manual JSON review; an annotation editor is not included.
+
+```sh
+uv run autolabel.py --finalize data/mixed-1000
+```
+
+This reuses saved selection and split settings without rerunning YuNet. It rejects
+unreviewed/dropped/unreadable real images, changed groups, invalid boxes, duplicate
+paths and an existing dataset. It writes the usual `tinyface-dataset-v1` manifest,
+updates summary split counts and prints actual real/synthetic counts per split.
+Summary detection/error counts describe the original teacher pass, not corrected
+human annotations. Then train using the existing command:
+
+```sh
+uv run train.py --data data/mixed-1000
+```
+
+Mixed runs do not create `test_teacher.jpg`. Training still creates
+`test_comparison.jpg`, with **Reference labels** on the left when reviewed real
+labels are present. Reports distinguish these from synthetic pseudo-labels.
+The trainer automatically evaluates test after each run: do not use those test
+results for repeated tuning. Reserve a separate final capture holdout if this
+split becomes part of the development loop. Keep split assignments fixed across
+comparisons; rerunning selection with different contents can change assignments.
+
+For a controlled data comparison keep record count and training settings fixed.
+INT8 calibration must reuse the same actual training images across compared
+models, not merely the same seed. The legacy mode below retains its image-level
+split and does not add real-group or manual-review guarantees.
+
 ## Step zero: automatic labels for an existing image collection
 
 `autolabel.py` selects a reproducible random subset from a directory (recursive),

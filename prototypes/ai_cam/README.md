@@ -3,6 +3,13 @@
 See the [experiment log](docs/experiment-log.md) for completed changes, timing
 results, the stream/inference comparison and outstanding optimization work.
 
+See the [TinyFace architecture and experiment plan](docs/architecture-experiment-plan.md)
+for the three-step proposal: diagnose the current model, test training data,
+then choose one architecture change if needed (reviewed 2026-10-30).
+
+See [real-first dataset sampling](neuralnet-training/README.md#mix-real-camera-images-with-a-synthetic-pool)
+for combining camera capture groups with a larger synthetic image pool.
+
 ## Collect training images on SD
 
 With power off, insert a FAT32 microSD card in the onboard socket, then boot and
