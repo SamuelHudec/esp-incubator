@@ -1,43 +1,24 @@
 # Prototype name
 
-One paragraph describing the question this experiment should answer.
+Purpose in one sentence.
 
 ## Status
 
-**Planning / wiring / firmware / verified / paused** — include the last tested
-date and exact hardware revision when relevant.
+Current stage and last hardware test date (if tested).
 
-## Hardware
+## Hardware and wiring
 
-- Board and revision
-- Peripheral modules
-- Power source and voltage
-- Protection/supporting components
-
-## Wiring
-
-Document every signal, voltage, shared ground, and required pull-up/down. Put a
-larger diagram or table in `docs/wiring.md` if necessary.
-
-## Safety and authorization
-
-Record electrical limits and any legal/privacy constraints. Radio experiments
-must use owned equipment and authorized networks.
+Exact board/module revisions, pin table or link to `docs/wiring.md`.
+Document supply voltage, logic levels, polarity and power limits with sources.
 
 ## Build and flash
 
-List the toolchain, pinned versions, dependencies, commands, and bootloader
-procedure.
+Toolchain version, dependencies, local configuration and upload procedure.
 
 ## Verification
 
-Describe a repeatable minimum test and the expected output.
+Minimum repeatable test and expected result.
 
-## Results and limitations
+## Limitations and next step
 
-Record what was observed, including failed approaches and measurement limits.
-
-## Next step
-
-Keep one small, testable next milestone here.
-
+Known constraints and the next testable milestone.

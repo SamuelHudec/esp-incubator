@@ -18,7 +18,7 @@ interface. No framework migration is needed. Camera and network drivers remain.
 The measured baseline is 25.29 stream FPS, CPU 0/1 approximately 15.76%/2.51%,
 and 4,156,888 bytes free PSRAM. Internal free RAM averaged only 116,957 bytes.
 These measurements do not predict inference latency or prove that all PSRAM is
-available as one contiguous allocation. See [baseline](../README.md#first-streaming-baseline--2026-10-08).
+available as one contiguous allocation. See [baseline](experiment-log.md#first-streaming-baseline--2026-10-08).
 
 ## Findings from existing work
 

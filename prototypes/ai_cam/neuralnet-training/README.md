@@ -1,436 +1,140 @@
-# TinyFace Python experiment
+# AI cam model training
 
-## Purpose and status
+Annotate images with YuNet, train the TinyFace detector, and export INT8 weights
+for the [ESP32 firmware](../README.md). The current model uses 128×96 grayscale
+input, 5,085 trainable parameters and a single-scale detection head.
+See the [architecture reference](../docs/architecture-reference.md) for details.
 
-2026-10-19: a from-scratch face detector for desktop experiments before any C
-implementation or quantization. No trained face model is included. Synthetic
-smoke tests verify the code path, not face accuracy. ESP32 firmware is unchanged.
+## Setup
 
-Use Python 3.12. Dependencies are declared in `pyproject.toml` and locked in `uv.lock`. No GPU is required;
-Training defaults to `--device auto`: MPS when available on macOS, otherwise
-CUDA when available, otherwise CPU. Override with `--device cpu`, `mps`, or `cuda`.
-An explicitly requested unavailable accelerator produces a clear error. The selected
-device is printed and saved in the run configuration. Inference still defaults to
-CPU; pass `--device mps` to `infer.py` to use MPS.
+Run commands from `prototypes/ai_cam/neuralnet-training`. Install `uv`; it manages
+Python 3.12, dependencies and `.venv` automatically. No environment activation is
+needed. Dependencies are pinned in `uv.lock`.
+
+Keep local images in `data/` and results in `runs/`; both are ignored by Git.
+
+## Annotate a collection
 
 ```sh
-cd prototypes/ai_cam/neuralnet-training
-uv run python -m unittest discover -v
+uv run autolabel.py --input /absolute/path/to/images --count 1000 --out data/autolabel-1000
 ```
 
-`uv run` automatically uses the project `.venv` and synchronizes dependencies;
-manual activation is unnecessary. Run commands from this directory. `.python-version`
-selects Python 3.12. For strict lockfile checking use `uv run --locked ...`.
-`requirements.txt` is a generated compatibility export; update dependencies with
-`uv add` and regenerate it with `uv export --format requirements-txt --no-hashes
---output-file requirements.txt`.
+The script downloads OpenCV YuNet and runs detection locally. `--count` samples
+images recursively; omit it to use all images. `--seed 42` is the default.
+The output directory must be new and outside the input tree.
 
-The local `.venv`, `data`, and `runs` directories are ignored by the repository's
-root `.gitignore`. Store images, checkpoints and annotated outputs there. Do not
-commit personal captures or model binaries. Commands below are relative to this
-training directory.
+Images stay in their original locations. `dataset.json` contains relative image
+paths, boxes and train/validation/test splits; moving the originals breaks them.
+Defaults: teacher threshold 0.8, validation fraction 0.2, fixed test sample 16.
+At least three positive images are needed to create a dataset.
 
-## Architecture
-
-`model.py` implements the architecture proposed in the
-[research notes](../docs/face-detection-research.md). It is an original experimental
-graph, inspired by efficient face detection approaches; no UltraFace code or
-pretrained weights are copied.
-
-Input: BGR image converted with OpenCV to grayscale, resized directly to 128x96
-with INTER_AREA, converted to float32 [0,1]. Non-4:3 inputs are stretched; box
-coordinates use normalized x/y values so they map back to the original image.
-
-- 3x3 convolution, stride 2: 1 -> 8 channels.
-- Depthwise 3x3 + pointwise 1x1 blocks: 8 -> 16 (stride 2), 16 -> 24
-  (stride 2), 24 -> 32, 32 -> 32, 32 -> 32.
-- Batch normalization and ReLU after each hidden convolution.
-- Linear 1x1 head: 32 -> 5 channels on a 16x12 grid.
-
-Kernel weights: 4,568; convolution MACs: 1,199,616. Total trainable parameters:
-5,085 including batch normalization and head biases. Training also includes batch
-normalization parameters and head biases; these are not an INT8 footprint.
-Receptive field: 63x63 input pixels. This is intentionally small and unproven.
-
-The five head channels are face logit and left/top/right/bottom distances,
-normalized by image width/height from grid reference `(column+.5)/16,
-(row+.5)/12`. Distances are **linear and signed** to represent small boxes whose
-assigned reference falls outside the box. Decode clips boxes to the image and
-rejects nonpositive width/height. A sigmoid is applied only to the face score.
-Greedy NMS uses IoU 0.3. One face center is assigned per cell; the smallest box
-wins collisions. Crowded/tiny faces are a known limitation of this single-scale
-baseline. The full annotated boxes remain in evaluation, so collisions are not
-silently removed from recall denominators.
-
-Training uses focal binary cross-entropy plus 5x smooth-L1 box loss at positive
-cells, AdamW, gradient clipping, random horizontal flips and brightness/contrast
-augmentation. Learning rate follows an epoch-wise cosine schedule; multi-scale augmentation
-is not implemented.
+Inspect `test_teacher.jpg`, `labels.json`, `review_no_faces.json` and
+`summary.json`. Teacher misses are excluded, not treated as negative examples.
+Labels are predictions and need review; random image splits can leak related
+identities or near-duplicate images.
 
 ## Mix real camera images with a synthetic pool
 
-Real images take priority within the **total sample size**. With `--count 1000`,
-150 real images means all 150 real plus 850 random synthetic images. With 1,200
-real images, select 1,000 random real images and no synthetic images. Equal
-real/total counts also use real images only. If the combined pool is too small,
-use everything available and print the counts. Omit `--count` to select everything
-from both directories. Selection is repeatable with the same inventory and seed.
-
-Run from this training directory:
-
 ```sh
-uv run autolabel.py --real-input /absolute/path/to/camera-photos --synthetic-input /absolute/path/to/synthetic-faces --count 1000 --seed 42 --out data/mixed-1000
+uv run autolabel.py --real-input /absolute/path/to/camera-photos --synthetic-input /absolute/path/to/synthetic-faces --count 1000 --out data/mixed-1000
 ```
 
-The console and `summary.json` report available/selected counts per source, plus
-teacher detections, misses and errors. Count applies **before annotation**, not
-to the final usable dataset. Files remain in place. The two roots must be separate
-and non-nested; output must be new and outside both input trees. Paths reachable
-from both sources count as real only. The original `--input` mode remains supported.
+Real images take priority within the total count; synthetic images fill the rest.
+Omit `--count` to use both pools in full. Roots must be separate and non-nested.
+Organize real images in top-level capture-session folders. A whole folder stays
+in one split; at least **three selected real groups** are required. Keep related
+frames together. Files directly in the input root form one group.
 
-### Real capture groups
+Mixed runs require review before creating `dataset.json`:
 
-Put independent real capture groups in top-level subdirectories:
-
-```text
-camera-photos/
-  morning-session/
-    photo01.jpg
-    photo02.jpg
-  evening-session/
-    photo03.jpg
-  another-day/
-    photo04.jpg
-```
-
-A whole group stays in one split: train, validation or test. Nested directories
-belong to their top-level group; files directly in the root form a single group.
-Keep adjacent frames, near duplicates and paired light settings together. Combine
-related sessions under one group where needed; folder names alone do not prove
-independence. Use disjoint people where possible; otherwise do not claim unseen
-identity generalization.
-
-Finalization needs at least **three selected real groups**, so each split contains
-real examples. With fewer groups, annotation still saves all selected records;
-collect/organize enough independent groups and create a new run. Do not randomly
-divide a burst to bypass this check. Whole-group boundaries take precedence over
-`--test-count` and `--val-fraction`; actual counts can exceed targets. Synthetic
-positives fill remaining targets using seeded image-level sampling. Exact byte
-copies across splits are rejected; near duplicates and synthetic identity overlap
-still require review.
-
-### Review, then create the dataset
-
-Mixed runs initially write review files, **not `dataset.json`**. Every selected
-real image remains in `labels.json`, including teacher misses and unreadable
-files. Synthetic teacher misses remain excluded. `selected.json` lists paths;
-`selection.json` also records each source and capture group.
-
-For every real row in `labels.json`:
-
-1. Inspect the original image. Correct/add all face boxes as normalized
-   `[x1, y1, x2, y2]` coordinates in [0,1]; remove false teacher boxes.
-2. Use `boxes: []` only for a human-confirmed negative. A teacher miss is not a
-   negative. Fix unreadable source files before proceeding.
-3. Set `review_status` to `reviewed`. Preserve image paths, sources and groups;
-   do not delete selected real rows. Real `scores` are regenerated as 1.0 display
-   placeholders at finalization, not calibrated teacher confidences.
-
-Edit **`labels.json`**, not the convenience list `review_no_faces.json`. Review
-includes positive detections, because their boxes can be wrong or incomplete.
-This is manual JSON review; an annotation editor is not included.
+1. Review **every real record in `labels.json`**, including teacher misses.
+   Correct boxes using normalized `[x1, y1, x2, y2]` coordinates in [0,1].
+2. Use `boxes: []` only for a confirmed negative; fix unreadable images.
+3. Set `review_status` to `reviewed`. Preserve paths, sources, groups and records.
+4. Finalize without rerunning detection:
 
 ```sh
 uv run autolabel.py --finalize data/mixed-1000
 ```
 
-This reuses saved selection and split settings without rerunning YuNet. It rejects
-unreviewed/dropped/unreadable real images, changed groups, invalid boxes, duplicate
-paths and an existing dataset. It writes the usual `tinyface-dataset-v1` manifest,
-updates summary split counts and prints actual real/synthetic counts per split.
-Summary detection/error counts describe the original teacher pass, not corrected
-human annotations. Then train using the existing command:
+Whole-group splits can exceed requested split sizes. Mixed runs do not create
+`test_teacher.jpg`; training produces a reference/student comparison instead.
+Keep the manifest fixed across experiments and reserve a separate final holdout
+if the test sample is repeatedly used for development.
+
+## Train
 
 ```sh
-uv run train.py --data data/mixed-1000
+uv run train.py --data data/autolabel-1000
 ```
 
-Mixed runs do not create `test_teacher.jpg`. Training still creates
-`test_comparison.jpg`, with **Reference labels** on the left when reviewed real
-labels are present. Reports distinguish these from synthetic pseudo-labels.
-The trainer automatically evaluates test after each run: do not use those test
-results for repeated tuning. Reserve a separate final capture holdout if this
-split becomes part of the development loop. Keep split assignments fixed across
-comparisons; rerunning selection with different contents can change assignments.
+`--data` is the folder containing `dataset.json`. Default output:
+`runs/<dataset-name>`, then `-2`, `-3`, etc. Use `--out runs/my-experiment` for a
+custom new directory. Training starts from scratch; resume is not implemented.
 
-For a controlled data comparison keep record count and training settings fixed.
-INT8 calibration must reuse the same actual training images across compared
-models, not merely the same seed. The legacy mode below retains its image-level
-split and does not add real-group or manual-review guarantees.
-
-## Step zero: automatic labels for an existing image collection
-
-`autolabel.py` selects a reproducible random subset from a directory (recursive),
-downloads the official [OpenCV YuNet model on Hugging Face](https://huggingface.co/opencv/face_detection_yunet),
-and runs face detection locally using the already installed OpenCV. No additional
-packages or Hugging Face account are required. Images are not uploaded. The model
-and its MIT license are cached locally; the script pins repository revision
-`3cc26e7f1014a5ee5d74a42acee58bafc9d0a310` and records the model SHA-256.
-
-```sh
-uv run autolabel.py --input /absolute/path/to/synthetic-faces --count 1000 --seed 42 --out data/autolabel-1000
-```
-
-- `--count`: optional number to sample without replacement, before detection.
-  Omit it to process all supported images recursively in sorted path order. If fewer
-  images exist than the specified count, use all available images. Supported: JPG/JPEG, PNG, BMP, WebP.
-- `--seed`: reproduces subset selection for the same sorted input file list.
-- `--test-count`: fixed held-out comparison sample size (default 16, range 1–100).
-  Small datasets reserve at least one training and one validation image.
-- `--val-fraction`: validation fraction (default 0.2); the seed also fixes the split.
-  At least three positive labeled images are needed to create `dataset.json`.
-- `--threshold`: minimum teacher score (default 0.8); higher values may miss more
-  faces. This score is not calibrated label correctness.
-- `--size`: detector's longest image side (default 640), keeping aspect ratio.
-  Larger values can help small faces but cost time; very large faces may need a
-  smaller value. This setting is independent of the student's 128x96 input.
-- `--cache`: optional model cache directory. Default is inside ignored `data/`.
-
-The script enumerates filenames, then decodes only selected images one at a time.
-It does not copy or modify originals. Output must be a new directory outside the
-input tree, so reruns cannot overwrite reviewed labels or sample generated previews.
-An unreadable image is reported, not replaced by a different sampled image.
-
-Outputs:
-
-| File | Purpose |
+| Setting | Default |
 | --- | --- |
-| `dataset.json` | Single input with disjoint train/validation/test records |
-| `labels.json` | Full positive-image annotations before splitting |
-| `review_no_faces.json` | Images with no detections, excluded from training by default |
-| `detections.jsonl` | Incrementally saved detections, scores and source paths |
-| `selected.json` | Exact sampled source list, including unreadable images |
-| `summary.json` | Counts, settings, model revision/hash, duration |
-| `errors.json` | Unreadable images or OpenCV errors |
-| `test_teacher.jpg` | Fixed held-out images with teacher boxes and scores |
+| Epochs / batch size | 100 / 32 |
+| Optimizer | AdamW |
+| Learning rate | Cosine decay from 0.001 to 0.00001 |
+| Loss | Focal BCE + 5 × Smooth L1 box loss |
+| Device | MPS on supported Macs, otherwise CUDA, otherwise CPU |
+| Evaluation score threshold | 0.5 |
 
-Open `test_teacher.jpg` in an image viewer. Rectangle aspect ratios follow the predicted
-face boxes; boxes are not artificially forced square. JSON coordinates refer to
-original image dimensions, not thumbnail or detector dimensions. Manifest image
-paths are relative to the output directory; moving originals breaks those links.
-No YOLO/Ultralytics export is needed for our existing trainer.
+Override with `--epochs`, `--batch-size`, `--lr`, `--min-lr`, `--device` or
+`--threshold`. There is no warm-up or early stopping.
 
-These are **pseudo-labels**, not ground truth. A no-detection image in a synthetic
-face collection is probably a teacher miss, not a verified negative. Inspect the
-misses separately and correct wrong/incomplete boxes before training. A montage
-is a spot check, not a measured annotation accuracy score. Multi-face images may
-still contain missed faces even when at least one face was labeled.
+| Output | Purpose |
+| --- | --- |
+| `best.pt`, `last.pt` | Best validation-loss model and final model |
+| `config.json`, `metrics.jsonl` | Settings and epoch results |
+| `training_curves.png` | Losses, learning rate, precision/recall and gradients |
+| `test_comparison.jpg` | Fixed reference labels beside student predictions |
+| `test_metrics.json`, `test_predictions.json` | Final test evaluation |
 
-`dataset.json` stores all three splits and normalized boxes; image paths are relative
- to that file. Originals remain in place. The default split is random by image,
-with 16 test images, approximately 20% of the full labeled set for validation,
-and the remainder for training, reproducible using `--seed`. For 1,000 positive
-images this is 784 train / 200 validation / 16 test. Related synthetic
-identities or generation groups can leak across this split; use a group-separated,
-manually reviewed validation set for meaningful accuracy claims. Add verified
-negative examples when available; teacher misses remain excluded.
+Training reloads `best.pt` for the final test. Metrics use IoU 0.5 and the chosen
+score threshold; agreement with pseudo-labels is not independent face accuracy.
+Choose thresholds on validation data, not the test sample.
 
-With fewer than three positive images autolabeling still exports labels
-but does not create a training dataset. A schema tag, split seed and fraction
-are saved alongside the records. Existing output directories are not overwritten.
-
-Interrupted runs keep their completed `detections.jsonl` records; automatic resume
-is not implemented. Use a new output directory for a complete rerun. Keep outputs
-under ignored `data/` or `runs/`, especially when originals contain private images.
-
-## Train and evaluate
+## Evaluate and infer
 
 ```sh
-uv run train.py --data data/autolabel-1000 --epochs 100 --batch-size 32
 uv run train.py --data data/autolabel-1000 --evaluate runs/autolabel-1000/best.pt
-```
-
-`--data` points to the output directory created by `autolabel.py`. The trainer
-automatically loads `dataset.json` from that directory. The file contains
-train, validation and test records, including image paths and boxes. With
-`--evaluate`, the same file's validation split is evaluated without training.
-
-`best.pt` is selected by validation loss, not test metrics. `last.pt` contains the
-last model. They store architecture, state dictionary, epoch, configuration and
-validation metrics; optimizer state/resuming are not implemented. The trainer
-starts from scratch on every invocation. By default output is `runs/<dataset-name>`
-(e.g. `runs/autolabel-1000`), followed by `-2`, `-3`, etc. when already present.
-Use `--out runs/my-experiment` for an explicit name; an existing explicit directory
-is rejected to prevent overwriting or mixing histories.
-`config.json` and `metrics.jsonl` record configuration and epoch results.
-
-Evaluation reports precision/recall using score-sorted one-to-one matching at
-IoU >= 0.5, TP/FP/FN counts, and the fraction of negative images with at least one
-false detection. No negative images means `negative_fp_rate: null`, not zero.
-These are fixed-threshold metrics, **not WIDER official AP**. Choose the score
-threshold on validation data (`--threshold`); freeze it before testing.
-
-## Inference
-
-```sh
 uv run infer.py --checkpoint runs/autolabel-1000/best.pt --source data/example.jpg --output runs/autolabel-1000/example.jpg
-uv run infer.py --checkpoint runs/autolabel-1000/best.pt --source 0
 uv run infer.py --checkpoint runs/autolabel-1000/best.pt --source http://ai-cam.local/
 ```
 
-For ESP32 close other stream viewers first (one viewer supported). Use the camera
-IP if mDNS fails. Press `q` to exit video preview. Images can be saved headlessly
-with `--output`; live preview needs a desktop window. Video is not recorded.
-The displayed time covers preprocessing, inference, CPU output transfer and box
-decoding, excluding source capture and drawing. It is desktop time, not ESP32
-performance. First inference can include warm-up overhead.
+Evaluation uses the validation split. Inference defaults to CPU; use
+`--device mps` or `--device cuda` to override. `--source 0` selects a webcam.
+Close other ESP32 stream viewers and press `q` to exit live preview.
+Desktop timing is not ESP32 timing; preview has no tracking or reconnect logic.
 
-This version detects independently on each frame. It does not yet implement
-tracking, smoothing, reconnect retries or a latest-frame capture queue. If Python
-cannot keep up with MJPEG, capture buffering can make preview lag. Validate
-single-image detection first; then measure stream latency before adding tracking.
-
-## Verification and next steps
-
-Run `uv run python -m unittest discover -v` for target/decode round trips, empty
-frames, checkpoint reload, finite gradients and a small synthetic overfit test.
-The synthetic foreground is a rectangle, not a face. A passing test demonstrates
-numerical wiring and learning behavior only.
-
-Next: train on labeled faces, inspect held-out overlays and failure cases, compare
-thresholds, and measure accuracy by face size. Widen the network if the tiny
-baseline lacks capacity. Only after float accuracy is useful should we freeze
-preprocessing and layer semantics, add INT8/export to C arrays and compare a
-parallel C inference implementation against Python golden outputs.
-
-2026-10-19 local verification: all three unit tests passed on Python 3.12 /
-PyTorch 2.9.1 CPU. A separate temporary-data CLI smoke run completed two training
-epochs, checkpoint evaluation, saved image inference and WIDER conversion
-(including an empty-image dummy annotation). The short CLI run produced no
-detections, as expected for this untrained smoke run; it is not an accuracy test.
-Live camera preview and real-face training have not been tested.
-
-## Fixed teacher/student comparison after training
-
-The annotator saves a fixed `test` list inside `dataset.json` and renders those
-images in their stored order in `test_teacher.jpg`. Their paths and teacher scores
-are retained. The test images are excluded from optimization and checkpoint
-selection. Keep the same dataset file across training runs for fair comparisons.
-
-After the final epoch, `train.py` reloads **best.pt** (selected on validation loss),
-evaluates the test split, and automatically saves in the training run directory:
-
-- `test_comparison.jpg`: teacher montage on the left, student montage on the right.
-- `test_predictions.json`: source paths, predicted normalized boxes and scores.
-- `test_metrics.json`: test metrics against the teacher pseudo-labels.
-
-The training threshold controls student detections. Teacher boxes/scores are
-loaded from the dataset, not recomputed. This small positive-image sample is a
-visual check of agreement, not independent face accuracy or false-positive testing.
-Test scores must not guide checkpoint or threshold selection. Related identities
-can still leak across image-level splits; a manually reviewed group-separated
-holdout is needed for a reliable accuracy claim. Do not edit the source images
-between annotation and comparison.
-
-## Learning rate and training diagnostics
-
-Defaults: `--lr 0.001`, `--min-lr 0.00001`, `--epochs 100`. Cosine decay changes
-the learning rate once per epoch: the first epoch uses `lr`, the final epoch uses
-`min-lr`. A one-epoch run uses `lr`. There is no warm-up or early stopping.
-`metrics.jsonl` records the LR actually used, not the next epoch's scheduled value.
-
-`training_curves.png` is updated after each completed epoch, so completed history
-is also visible during training:
-
-- Total train/validation loss.
-- Train/validation focal classification loss.
-- Train/validation Smooth L1 box loss, before its x5 weight.
-- Learning rate over epochs.
-- Validation precision and recall at the configured score threshold and IoU 0.5.
-- Mean batch gradient norm before clipping, with the clipping threshold (10).
-
-Loss curves use image-weighted batch averages; each batch loss is normalized by
-its positive cells. Train uses augmentation and training-mode batch normalization;
-validation does not, so their losses need not have identical scales or ordering.
-Validation metrics measure agreement with pseudo-labels. These plots show the
-schedule actually used; they do not compare hypothetical training strategies.
-
-Only `test_comparison.jpg` is written as a test image in the training run. Its
-teacher/student panels are assembled in memory. Autolabeling still produces its
-fixed `test_teacher.jpg` inside the dataset directory for initial label review.
-Older run artifacts are preserved.
-
-## INT8 quantization and direct C export
-
-Run post-training calibration and export on CPU in Python. Use a new output
-folder; the exporter refuses to overwrite an existing export:
+## Quantize and install the firmware model
 
 ```sh
-uv run quantize.py --checkpoint runs/autolabel-1000-4/best.pt --data data/autolabel-1000
+uv run quantize.py --checkpoint runs/autolabel-1000/best.pt --data data/autolabel-1000
 ```
 
-Default output is `int8/` next to the checkpoint; use `--out runs/my-int8-export`
-to choose another directory. `--calibration-count 128`, `--seed 42`, and
-`--threshold 0.5` are defaults. Calibration samples training images only;
-float versus integer validation uses the entire validation split. Test is untouched.
-A local C compiler (`cc`, e.g. Xcode Command Line Tools on macOS) is required for
-parity verification. Export runs no firmware flashing and changes no checkpoint.
-After all checks and validation succeed, it automatically installs the exported
-`nn_model.h` into `../firmware/neuralnet/`, replacing the firmware model atomically.
-This also applies to custom `--out` directories. A failed export preserves the
-previous firmware model. Compile and upload Arduino firmware to use the new model.
+Requires a local C compiler (`cc`; Xcode Command Line Tools on macOS).
+Defaults: 128 training images for calibration, seed 42, validation threshold 0.5.
+The exporter checks C/Python parity and evaluates float/INT8 on validation data.
+It leaves the test split untouched.
 
-The output contains only `nn_model.h` (quantized graph and parameters),
-`golden.npz` (reference input and layer outputs), and `report.json` (quality
-metrics and provenance). Verification builds use temporary files that are removed
-on success or failure. C sources remain in `../firmware/neuralnet/`.
+Output is a new `int8/` folder beside the checkpoint (`--out` overrides it):
+`nn_model.h`, `golden.npz` and `report.json`. Existing exports are not overwritten.
+After successful checks, the model automatically replaces
+`../firmware/neuralnet/nn_model.h`. Failure preserves the previous firmware model.
+**Compile and upload the Arduino sketch to activate it on the board.**
 
-
-This is full integer convolution inference, not merely INT8 weights with floating
-activation math. BatchNorm is fused offline, hidden tensors use one symmetric
-scale each, and the final five channels have separate scales. Output dequantization,
-sigmoid, box decoding and NMS are implemented in C and compared with Python for
-validation. The included C kernel is a correctness reference; ESP32 performance
-optimization remains pending hardware measurements. Arduino integration handles
-JPEG decoding and camera sampling.
-
-2026-10-20 initial measured export of `autolabel-1000-4/best.pt`: 128 calibration
-images, 200 validation images, threshold 0.5 and IoU 0.5. Float precision/recall:
-91.43% / 78.43%; INT8: 89.30% / 81.86%. The shift in metrics is not proof of an
-improvement: these are teacher pseudo-labels at a fixed threshold. Kernel weights:
-4,568 bytes; weights plus biases/multipliers/shifts: 7,700 bytes. Two activation
-buffers: 49,152 bytes. C/Python outputs matched exactly at every layer on four
-verification inputs. No ESP32 benchmark has been performed.
-
-## Portable C pipeline and Arduino integration
-
-The canonical C sources now live in [neuralnet](../firmware/neuralnet). They include
-preprocessing, graph execution, score/box decoding and NMS. Quantization exports
-only the model and verification data. Validate an existing export with:
+## Checks and next steps
 
 ```sh
-uv run python -m utils.verify_pipeline --export runs/autolabel-1000-4/int8 --data data/autolabel-1000
+uv run python -m unittest discover -s tests -v
+uv run python -m utils.verify_pipeline --export runs/autolabel-1000/int8 --data data/autolabel-1000
 ```
 
-This compiles the current C pipeline, checks the golden INT8 head, then compares
-QVGA preprocessing and box decoding on validation images. The report is printed
-to the terminal without adding files to the export directory. It does not flash a board.
-See [firmware setup and verification](../README.md#experimental-c-inference-integration--2026-10-20)
-for the Arduino integration and live detection viewer.
+Tests live in `tests/`, supporting tools in `utils/`, and the C runtime in
+`../firmware/neuralnet/`. Tests check implementation correctness, not face quality.
+Use `--help` on each script for additional options.
 
-## Source layout
-
-- `autolabel.py`, `train.py`, `infer.py`, `quantize.py`: main workflow commands.
-- `model.py`, `data.py`: network definition and dataset loading.
-- `tests/`: unit tests; run `uv run python -m unittest discover -s tests -v`.
-- `utils/`: training plots and the C pipeline verification tool. Run utilities
-  as modules, for example `uv run python -m utils.verify_pipeline --help`.
-- `../firmware/neuralnet/`: portable C inference and the locally generated `nn_model.h`.
-
-C runtime names are independent of the detected category. The current graph is
-still a single-class detector with a fixed 128x96 grayscale input and 16x12 head.
-Other object categories require suitable labeled training data; the bundled
-YuNet autolabeler detects faces only. Existing checkpoint and dataset format IDs
-remain unchanged so saved training runs remain readable. Older C exports using
-`tinyface_model.h` must be regenerated into a new output directory before using
-the renamed verification utility.
+Next experiments: [data and architecture plan](../docs/architecture-experiment-plan.md).
