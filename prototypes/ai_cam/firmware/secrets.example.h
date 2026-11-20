@@ -4,3 +4,7 @@
 // Use a 2.4 GHz personal Wi-Fi network. Do not commit real credentials.
 #define WIFI_SSID "YOUR_WIFI_NAME"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+
+// Optional fallback (for example a 2.4 GHz phone hotspot). Empty SSID disables it.
+#define WIFI_FALLBACK_SSID ""
+#define WIFI_FALLBACK_PASSWORD ""

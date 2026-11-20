@@ -3,6 +3,7 @@
 #include "esp_camera.h"
 #include "esp_http_server.h"
 #include "secrets.h"
+#include "wifi_connection.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
@@ -234,17 +235,12 @@ void setup() {
 
   lightStart();
   photoStart();
-  WiFi.setHostname(HOSTNAME);
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  WiFi.setSleep(false);
-  Serial.println("Connecting to Wi-Fi (2.4 GHz)...");
+  wifiStart(HOSTNAME);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print('.');
+    wifiTick();
+    lightTick();
+    delay(100);
   }
-  Serial.println();
 
   metricsStartUs = esp_timer_get_time();
 #ifdef HAS_CPU_METRICS
@@ -304,6 +300,7 @@ void setup() {
 }
 
 void loop() {
+  wifiTick();
   lightTick();
   static IPAddress lastAddress;
   static bool wasConnected=false;

@@ -28,6 +28,20 @@ in dim light. Measurements and test history: [experiment log](docs/experiment-lo
 5. Open Serial Monitor at **115200 baud** and use the printed address.
    If `ai-cam.local` does not resolve, use the printed IP.
 
+Optional secondary Wi-Fi in `firmware/secrets.h`:
+
+```cpp
+#define WIFI_FALLBACK_SSID "YOUR_SECOND_WIFI_NAME"
+#define WIFI_FALLBACK_PASSWORD "YOUR_SECOND_WIFI_PASSWORD"
+```
+
+The camera tries primary for 15 seconds, then fallback for 15 seconds, repeating
+until connected. An empty or omitted fallback SSID keeps single-network behavior.
+After a disconnect it tries primary first again; a working fallback is kept until
+disconnected. Both networks must support 2.4 GHz. Recompile/upload after editing.
+Verify by booting with primary unavailable, checking fallback access, then dropping
+that connection and checking reconnection. Hardware verification is pending.
+
 ## Use
 
 Keep only one stream viewer open.
