@@ -72,7 +72,9 @@ Thumbs.db
 *.FCStd
 Archive.zip
 
-# Test, Python, and tooling caches
+# Python environments, packaging, and tooling caches
+.venv/
+*.egg-info/
 **/__pycache__/
 *.py[cod]
 **/.pytest_cache/
@@ -98,7 +100,6 @@ Archive.zip
 **/*.local.md
 
 # AI camera Python experiments
-prototypes/ai_cam/neuralnet-training/.venv/
 prototypes/ai_cam/neuralnet-training/data/
 prototypes/ai_cam/neuralnet-training/runs/
 

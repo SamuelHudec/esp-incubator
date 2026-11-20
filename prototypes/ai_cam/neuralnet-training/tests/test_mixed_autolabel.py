@@ -61,9 +61,15 @@ class MixedAutolabelTests(unittest.TestCase):
             self.assertEqual(dataset,json.loads((root/'repeat.json').read_text()))
             for row in records: row['group']='one-burst'
             labels.write_text(json.dumps(records))
-            with self.assertRaisesRegex(ValueError,'three selected real capture groups'):
-                export_dataset(labels,root/'bad.json')
-            self.assertFalse((root/'bad.json').exists())
+            original = labels.read_bytes()
+            export_dataset(labels,root/'random.json',test_count=2)
+            random_dataset=json.loads((root/'random.json').read_text())
+            self.assertEqual(random_dataset['split']['method'], 'random-image')
+            self.assertEqual([len(random_dataset[k]) for k in ('train','val','test')], [8,2,2])
+            self.assertEqual(len({r['image'] for k in ('train','val','test') for r in random_dataset[k]}),12)
+            self.assertEqual(labels.read_bytes(), original)
+            export_dataset(labels,root/'random-repeat.json',test_count=2)
+            self.assertEqual(random_dataset,json.loads((root/'random-repeat.json').read_text()))
 
     def test_duplicate_contents_cannot_leak_across_groups(self):
         with tempfile.TemporaryDirectory() as d:

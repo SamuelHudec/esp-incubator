@@ -162,11 +162,8 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
         converted.append(converted_row)
     rng = random.Random(seed)
     real_rows = [r for r in converted if r.get('dataset_source') == 'real']
-    if real_rows:
-        groups = sorted({r['group'] for r in real_rows})
-        if len(groups) < 3:
-            raise ValueError('Need at least three selected real capture groups for train/val/test; '
-                             'keep related photos together in top-level real subdirectories')
+    groups = sorted({r['group'] for r in real_rows})
+    if len(groups) >= 3:
         rng.shuffle(groups)
         grouped = {g: [r for r in real_rows if r['group'] == g] for g in groups}
         # Targets are approximate: never cut a real capture group to meet a count.
@@ -187,6 +184,18 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
         splits['test'].extend(synthetic[:ntest])
         splits['val'].extend(synthetic[ntest:ntest+nval])
         splits['train'].extend(synthetic[ntest+nval:])
+        method = 'real-capture-group/synthetic-random-image'
+    else:
+        rng.shuffle(converted)
+        ntest = min(test_count, len(converted)-2)
+        nval = max(1, min(len(converted)-ntest-1, round(len(converted)*val_fraction)))
+        splits = dict(test=converted[:ntest], val=converted[ntest:ntest+nval],
+                      train=converted[ntest+nval:])
+        method = 'random-image'
+    if real_rows:
+        if len(groups) < 3:
+            print('Fewer than three real capture groups: using seeded random image splits. '
+                  'Similar frames may appear in both training and evaluation.', flush=True)
         # Path checks cannot detect copies under different names or sources.
         hashes = {}
         for split, rows in splits.items():
@@ -196,14 +205,6 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
                 if digest in hashes and hashes[digest] != split:
                     raise ValueError('Identical image contents cross splits; remove copies or group them together')
                 hashes[digest] = split
-        method = 'real-capture-group/synthetic-random-image'
-    else:
-        rng.shuffle(converted)
-        ntest = min(test_count, len(converted)-2)
-        nval = max(1, min(len(converted)-ntest-1, round(len(converted)*val_fraction)))
-        splits = dict(test=converted[:ntest], val=converted[ntest:ntest+nval],
-                      train=converted[ntest+nval:])
-        method = 'random-image'
     dataset = dict(format='tinyface-dataset-v1', split=dict(method=method,
                    seed=seed, val_fraction=val_fraction, test_count=len(splits['test'])), **splits)
     output.parent.mkdir(parents=True, exist_ok=True)

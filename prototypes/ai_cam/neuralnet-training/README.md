@@ -41,17 +41,34 @@ uv run autolabel.py --real-input /absolute/path/to/camera-photos --synthetic-inp
 
 Real images take priority within the total count; synthetic images fill the rest.
 Omit `--count` to use both pools in full. Roots must be separate and non-nested.
-Organize real images in top-level capture-session folders. A whole folder stays
-in one split; at least **three selected real groups** are required. Keep related
-frames together. Files directly in the input root form one group.
+Organize real images in top-level capture-session folders. With at least three real groups, each whole folder stays in one split.
+With fewer groups, finalization randomly splits all images using the saved seed;
+subfolders are optional. Similar frames can then appear in both training and
+evaluation, making metrics optimistic. Files in the input root form one group.
 
-Mixed runs require review before creating `dataset.json`:
+Export full-size annotated copies of all real images for visual review:
 
-1. Review **every real record in `labels.json`**, including teacher misses.
-   Correct boxes using normalized `[x1, y1, x2, y2]` coordinates in [0,1].
-2. Use `boxes: []` only for a confirmed negative; fix unreadable images.
-3. Set `review_status` to `reviewed`. Preserve paths, sources, groups and records.
-4. Finalize without rerunning detection:
+```sh
+uv run utils/export_review.py --data data/mixed-1000
+```
+
+Open `data/mixed-1000/review-images/`. Orange boxes come from `labels.json`;
+images with empty annotations have no overlay. PNG names start with the 1-based
+record number in `labels.json`, followed by the original filename stem.
+Synthetic images are skipped. Originals and annotations are unchanged; this does
+not mark images as reviewed or rerun detection. Unreadable images are listed in
+`errors.txt` and cause a nonzero exit. Use `--out` for a different new output
+folder, including when exporting again after correcting annotations.
+
+Review and edit real annotations in the [local annotation editor](annotator/README.md):
+
+```sh
+uv run annotator/annotate.py --data data/mixed-1000
+```
+
+Draw, move or resize boxes with the mouse; Delete removes a box. Arrow keys save
+and confirm before switching images; Enter confirms the current image. Empty
+confirmed boxes mean a reviewed negative. Once all real images are reviewed:
 
 ```sh
 uv run autolabel.py --finalize data/mixed-1000

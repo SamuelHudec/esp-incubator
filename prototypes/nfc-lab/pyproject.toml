@@ -1,0 +1,16 @@
+[project]
+name = "nfc-lab"
+version = "0.1.2"
+description = "Offline USB console for the ESP32-C3 and PN532 NFC reader"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+nfc-lab = "lab:cli"
+
+[build-system]
+requires = ["setuptools>=77,<85"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["lab", "classic"]

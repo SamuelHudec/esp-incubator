@@ -1,0 +1,8 @@
+version = 1
+revision = 3
+requires-python = ">=3.9"
+
+[[package]]
+name = "nfc-lab"
+version = "0.1.2"
+source = { editable = "." }

@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Face annotations</title>
+<style>
+body{font:15px system-ui;margin:20px;background:#202124;color:#eee}button{font:inherit;margin:0 6px 10px 0;padding:6px 12px}p{margin:8px 0}canvas{display:block;max-width:100%;touch-action:none;background:#111}#status{min-height:24px;color:#ffcf80}#name{overflow-wrap:anywhere}
+</style>
+<button id="prev">← Previous</button><button id="next">Next →</button>
+<button id="save">Save / confirm (Enter)</button><button id="remove">Delete box</button>
+<p>Drag empty space to draw · Drag a box to move · Drag corners to resize · Delete to remove · Arrow keys to navigate</p>
+<p id="name"></p><p id="status"></p><canvas id="canvas"></canvas>
+<script>
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),status=document.querySelector('#status');
+let rows=[],index=0,boxes=[],selected=-1,img=null,drag=null,busy=false,dirty=false;
+const clone=x=>JSON.parse(JSON.stringify(x));
+function message(s){status.textContent=s;}
+function draw(){if(!img)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+boxes.forEach((b,i)=>{const [x,y,r,t]=b.map((v,j)=>v*(j%2?canvas.height:canvas.width));ctx.strokeStyle=i===selected?'#00e5ff':'#ffa500';ctx.lineWidth=2;ctx.strokeRect(x,y,r-x,t-y);if(i===selected){ctx.fillStyle='#00e5ff';for(const [a,c] of [[x,y],[r,y],[r,t],[x,t]])ctx.fillRect(a-4,c-4,8,8);}});}
+function fit(){if(!img)return;const scale=Math.min(1,(innerWidth-40)/img.width,Math.max(180,innerHeight-190)/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);draw();}
+async function load(){busy=true;img=null;ctx.clearRect(0,0,canvas.width,canvas.height);selected=-1;dirty=false;boxes=clone(rows[index].boxes);document.querySelector('#name').textContent=`${index+1} / ${rows.length} — ${rows[index].image}`;message('Loading…');
+try{const response=await fetch('/image/'+index);if(!response.ok)throw Error(await response.text());const url=URL.createObjectURL(await response.blob());try{const image=new Image();image.src=url;await image.decode();img=image;}finally{URL.revokeObjectURL(url);}fit();message(rows[index].reviewed?'Reviewed':'Not reviewed — Enter or navigation saves and confirms this image.');}catch(e){message(e.message);}finally{busy=false;}}
+async function save(){if(!img)throw Error('Image is not loaded; cannot confirm.');const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index,boxes})});if(!response.ok)throw Error(await response.text());rows[index].boxes=clone(boxes);rows[index].reviewed=true;dirty=false;message(boxes.length?'Saved':'Saved — confirmed no faces');}
+async function act(step){if(busy||drag)return;busy=true;try{if(img)await save();if(step){const target=Math.max(0,Math.min(rows.length-1,index+step));if(target!==index){index=target;await load();}}}catch(e){message('Not saved: '+e.message);}finally{busy=false;}}
+function point(e){const r=canvas.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];}
+canvas.onpointerdown=e=>{if(busy||!img||e.button!==0)return;const p=point(e);let corner=-1,hit=-1;if(selected>=0){const b=boxes[selected];const corners=[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]];corner=corners.findIndex(c=>Math.abs(c[0]-p[0])*canvas.width<10&&Math.abs(c[1]-p[1])*canvas.height<10);if(corner>=0)hit=selected;}
+if(hit<0)for(let i=boxes.length-1;i>=0;i--){const b=boxes[i];if(p[0]>=b[0]&&p[0]<=b[2]&&p[1]>=b[1]&&p[1]<=b[3]){hit=i;break;}}
+const before=clone(boxes);if(hit<0){boxes.push([...p,...p]);hit=boxes.length-1;}selected=hit;drag={p,b:boxes[hit].slice(),corner,before,mode:corner>=0?'resize':hit>=before.length?'new':'move'};canvas.setPointerCapture(e.pointerId);draw();};
+canvas.onpointermove=e=>{if(!drag)return;const p=point(e),b=drag.b;let n;
+if(drag.mode==='move'){const dx=Math.max(-b[0],Math.min(1-b[2],p[0]-drag.p[0])),dy=Math.max(-b[1],Math.min(1-b[3],p[1]-drag.p[1]));n=[b[0]+dx,b[1]+dy,b[2]+dx,b[3]+dy];}
+else {let anchor=drag.p;if(drag.mode==='resize')anchor=[[b[2],b[3]],[b[0],b[3]],[b[0],b[1]],[b[2],b[1]]][drag.corner];n=[Math.min(anchor[0],p[0]),Math.min(anchor[1],p[1]),Math.max(anchor[0],p[0]),Math.max(anchor[1],p[1])];}boxes[selected]=n.map(v=>Math.max(0,Math.min(1,v)));draw();};
+canvas.onpointerup=()=>{if(!drag)return;const b=boxes[selected];if((b[2]-b[0])*canvas.width<3||(b[3]-b[1])*canvas.height<3){boxes=drag.before;selected=-1;}else{dirty=true;message('Edited — Enter or navigation saves.');}drag=null;draw();};
+canvas.onpointercancel=()=>{if(drag){boxes=drag.before;drag=null;selected=-1;draw();}};
+function remove(){if(busy||drag||selected<0)return;boxes.splice(selected,1);selected=-1;dirty=true;draw();message('Edited — Enter or navigation saves.');}
+document.querySelector('#prev').onclick=()=>act(-1);document.querySelector('#next').onclick=()=>act(1);document.querySelector('#save').onclick=()=>act(0);document.querySelector('#remove').onclick=remove;
+window.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Enter','Delete','Backspace'].includes(e.key)){e.preventDefault();if(e.repeat)return;if(e.key==='ArrowLeft')act(-1);else if(e.key==='ArrowRight')act(1);else if(e.key==='Enter')act(0);else remove();}};
+window.onresize=fit;window.onbeforeunload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};
+fetch('/records').then(r=>r.json()).then(data=>{rows=data;index=Math.max(0,rows.findIndex(r=>!r.reviewed));load();}).catch(e=>message(e.message));
+</script>
