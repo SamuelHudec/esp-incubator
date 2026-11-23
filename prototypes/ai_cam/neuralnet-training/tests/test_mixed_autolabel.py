@@ -21,16 +21,16 @@ def image(path, value):
 class MixedAutolabelTests(unittest.TestCase):
     def test_real_first_sampling_and_shortage(self):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d); real=root/'real'; synthetic=root/'synthetic'
+            root=Path(d); real=root/'real'; extra=root/'extra'
             for i in range(6): image(real/f'session-{i//2}/{i}.png',i)
-            for i in range(10): image(synthetic/f'{i}.png',i+20)
+            for i in range(10): image(extra/f'{i}.png',i+20)
             for count, expected in [(10,(6,4)),(6,(6,0)),(3,(3,0)),(30,(6,10)),(None,(6,10))]:
-                rows,counts=select_mixed_images(real,synthetic,count,42)
-                self.assertEqual((counts['real']['selected'],counts['synthetic']['selected']),expected)
+                rows,counts=select_mixed_images(real,extra,count,42)
+                self.assertEqual((counts['real']['selected'],counts['extra']['selected']),expected)
                 self.assertEqual(len({r['source'] for r in rows}),sum(expected))
-                self.assertEqual(rows,select_mixed_images(real,synthetic,count,42)[0])
-            self.assertNotEqual(select_mixed_images(real,synthetic,3,42)[0],
-                                select_mixed_images(real,synthetic,3,43)[0])
+                self.assertEqual(rows,select_mixed_images(real,extra,count,42)[0])
+            self.assertNotEqual(select_mixed_images(real,extra,3,42)[0],
+                                select_mixed_images(real,extra,3,43)[0])
             with self.assertRaises(ValueError): select_mixed_images(real,real,None,42)
             with self.assertRaises(ValueError): select_mixed_images(root,real,None,42)
 
@@ -85,12 +85,12 @@ class MixedAutolabelTests(unittest.TestCase):
 
     def test_mixed_cli_keeps_misses_and_errors_then_finalizes(self):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d);real=root/'real';synthetic=root/'synthetic';out=root/'run'
+            root=Path(d);real=root/'real';extra=root/'extra';out=root/'run'
             for i in range(6): image(real/f'session-{i//2}/{i}.png',i+1)
             broken=real/'session-0/broken.png';broken.write_text('not an image')
-            for i in range(8): image(synthetic/f'{i}.png',i+30)
+            for i in range(8): image(extra/f'{i}.png',i+30)
             model=root/'teacher.onnx';model.write_bytes(b'mocked teacher')
-            argv=['autolabel.py','--real-input',str(real),'--synthetic-input',str(synthetic),
+            argv=['autolabel.py','--real-input',str(real),'--extra-input',str(extra),
                   '--count','10','--out',str(out),'--test-count','2']
             def fake_detect(detector, pixels, size):
                 return ([],[]) if pixels[0,0,0]<10 else ([[.1,.1,.8,.8]],[.9])
@@ -100,7 +100,7 @@ class MixedAutolabelTests(unittest.TestCase):
                  patch('autolabel.detect',side_effect=fake_detect), contextlib.redirect_stdout(stream):
                 main()
             self.assertIn('real: selected 7 / available 7',stream.getvalue())
-            self.assertIn('synthetic: selected 3 / available 8',stream.getvalue())
+            self.assertIn('extra: selected 3 / available 8',stream.getvalue())
             self.assertFalse((out/'dataset.json').exists())
             labels=json.loads((out/'labels.json').read_text())
             self.assertEqual(sum(r['dataset_source']=='real' for r in labels),7)
@@ -130,13 +130,13 @@ class MixedAutolabelTests(unittest.TestCase):
 
     def test_empty_real_pool_and_flat_capture_group(self):
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d);real=root/'real';real.mkdir();synthetic=root/'synthetic'
-            for i in range(4): image(synthetic/f'{i}.png',i)
-            rows,counts=select_mixed_images(real,synthetic,3,42)
+            root=Path(d);real=root/'real';real.mkdir();extra=root/'extra'
+            for i in range(4): image(extra/f'{i}.png',i)
+            rows,counts=select_mixed_images(real,extra,3,42)
             self.assertEqual(counts['real']['selected'],0)
-            self.assertTrue(all(r['dataset_source']=='synthetic' for r in rows))
+            self.assertTrue(all(r['dataset_source']=='extra' for r in rows))
             for i in range(3): image(real/f'{i}.png',i+20)
-            rows,_=select_mixed_images(real,synthetic,3,42)
+            rows,_=select_mixed_images(real,extra,3,42)
             self.assertEqual({r['group'] for r in rows},{'__root__'})
 
 

@@ -168,7 +168,7 @@ def main():
     test_loader = DataLoader(test, batch_size=args.batch_size, collate_fn=collate)
     metrics = evaluate(model, test_loader, args.device, args.threshold)
     reviewed = any(row.get('annotation_source') == 'human-reviewed' for row in test.records)
-    metrics['reference'] = ('human-reviewed real labels; any synthetic labels are teacher pseudo-labels'
+    metrics['reference'] = ('human-reviewed real labels; additional-source labels are teacher pseudo-labels'
                             if reviewed else 'teacher pseudo-labels, not human ground truth')
     (out/'test_metrics.json').write_text(json.dumps(metrics, indent=2))
     teacher_rows, student_rows = [], []

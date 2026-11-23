@@ -1,4 +1,4 @@
-"""Seeded subset selection and local YuNet pseudo-labeling with visual review."""
+"""Seeded subset selection and local face pseudo-labeling with visual review."""
 import argparse
 import hashlib
 import json
@@ -41,23 +41,23 @@ def select_images(root, count, seed):
     return random.Random(seed).sample(paths, min(count,len(paths))), len(paths)
 
 
-def select_mixed_images(real_root, synthetic_root, count, seed):
+def select_mixed_images(real_root, extra_root, count, seed):
     """Real-first sampling without replacement; first-level real folders are sessions."""
-    real_root, synthetic_root = Path(real_root).resolve(), Path(synthetic_root).resolve()
-    if real_root.is_relative_to(synthetic_root) or synthetic_root.is_relative_to(real_root):
-        raise ValueError('Real and synthetic directories must be separate, non-nested directories')
+    real_root, extra_root = Path(real_root).resolve(), Path(extra_root).resolve()
+    if real_root.is_relative_to(extra_root) or extra_root.is_relative_to(real_root):
+        raise ValueError('Real and extra directories must be separate, non-nested directories')
     def inventory(root):
         return sorted({p.resolve() for p in root.rglob('*')
                        if p.is_file() and p.suffix.lower() in EXTENSIONS})
     real = inventory(real_root)
     # A file reachable through both sources belongs to the real source only.
-    synthetic = sorted(set(inventory(synthetic_root)) - set(real))
-    if not real and not synthetic:
+    extra = sorted(set(inventory(extra_root)) - set(real))
+    if not real and not extra:
         raise ValueError('No supported images found')
     rng = random.Random(seed)
     chosen_real = real if count is None or len(real) <= count else rng.sample(real, count)
-    remaining = len(synthetic) if count is None else max(0, count-len(chosen_real))
-    chosen_synthetic = rng.sample(synthetic, min(remaining, len(synthetic)))
+    remaining = len(extra) if count is None else max(0, count-len(chosen_real))
+    chosen_extra = rng.sample(extra, min(remaining, len(extra)))
     records = []
     for path in chosen_real:
         if not path.is_relative_to(real_root):
@@ -65,12 +65,14 @@ def select_mixed_images(real_root, synthetic_root, count, seed):
         relative = path.relative_to(real_root)
         group = relative.parts[0] if len(relative.parts) > 1 else '__root__'
         records.append(dict(source=str(path), dataset_source='real', group=group))
-    records.extend(dict(source=str(p), dataset_source='synthetic') for p in chosen_synthetic)
+    records.extend(dict(source=str(p), dataset_source='extra') for p in chosen_extra)
     return records, dict(real=dict(available=len(real), selected=len(chosen_real)),
-                         synthetic=dict(available=len(synthetic), selected=len(chosen_synthetic)))
+                         extra=dict(available=len(extra), selected=len(chosen_extra)))
 
 
 def detect(detector, image, size):
+    if hasattr(detector, "predict"):
+        return detector.predict(image, size)
     h,w = image.shape[:2]
     scale = size/max(h,w)
     nw,nh = max(1,round(w*scale)), max(1,round(h*scale))
@@ -129,6 +131,9 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
     seen = set()
     converted = []
     for row in records:
+        if (row.get('dataset_source') in ('extra', 'synthetic') and not row['boxes']
+                and row.get('review_status') != 'reviewed'):
+            continue  # A teacher miss is not a confirmed negative.
         source = (labels.parent / row['image']).resolve()
         if source in seen:
             raise ValueError('Duplicate image paths in labels')
@@ -153,13 +158,15 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
             if cv2.imread(str(source)) is None:
                 raise ValueError(f'Unreadable real image: {source}')
         converted_row = dict(image=os.path.relpath(source, output.parent), boxes=boxes,
-                             scores=[1.0]*len(boxes) if real else row.get('scores', [1.0]*len(boxes)))
+                             scores=[1.0]*len(boxes) if row.get('review_status') == 'reviewed' else row.get('scores', [1.0]*len(boxes)))
         for key in ('dataset_source', 'group', 'review_status'):
             if key in row:
                 converted_row[key] = row[key]
-        if real:
+        if row.get('review_status') == 'reviewed':
             converted_row['annotation_source'] = 'human-reviewed'
         converted.append(converted_row)
+    if len(converted) < 3:
+        raise ValueError('At least three usable images are required for train/val/test')
     rng = random.Random(seed)
     real_rows = [r for r in converted if r.get('dataset_source') == 'real']
     groups = sorted({r['group'] for r in real_rows})
@@ -176,15 +183,15 @@ def export_dataset(labels, output, val_fraction=.2, seed=42, test_count=16):
                 splits[split].extend(grouped[remaining.pop(0)])
         for group in remaining:
             splits['train'].extend(grouped[group])
-        synthetic = [r for r in converted if r.get('dataset_source') != 'real']
-        rng.shuffle(synthetic)
-        ntest = min(len(synthetic), max(0, test_count-len(splits['test'])))
-        nval = min(len(synthetic)-ntest,
+        extra = [r for r in converted if r.get('dataset_source') != 'real']
+        rng.shuffle(extra)
+        ntest = min(len(extra), max(0, test_count-len(splits['test'])))
+        nval = min(len(extra)-ntest,
                    max(0, round(len(converted)*val_fraction)-len(splits['val'])))
-        splits['test'].extend(synthetic[:ntest])
-        splits['val'].extend(synthetic[ntest:ntest+nval])
-        splits['train'].extend(synthetic[ntest+nval:])
-        method = 'real-capture-group/synthetic-random-image'
+        splits['test'].extend(extra[:ntest])
+        splits['val'].extend(extra[ntest:ntest+nval])
+        splits['train'].extend(extra[ntest+nval:])
+        method = 'real-capture-group/extra-random-image'
     else:
         rng.shuffle(converted)
         ntest = min(test_count, len(converted)-2)
@@ -239,47 +246,52 @@ def print_dataset_counts(directory):
     for split in ('train','val','test'):
         rows = dataset[split]
         real = sum(r.get('dataset_source') == 'real' for r in rows)
-        print(f'{split}: {len(rows)} images (real={real}, synthetic/legacy={len(rows)-real})', flush=True)
+        print(f'{split}: {len(rows)} images (real={real}, extra/legacy={len(rows)-real})', flush=True)
     print(f'Dataset ready: {directory}/dataset.json. Real labels are human-reviewed; '
-          'synthetic labels remain teacher pseudo-labels.', flush=True)
+          'extra labels remain teacher pseudo-labels.', flush=True)
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input',help='Legacy single image directory, searched recursively')
     parser.add_argument('--real-input',help='Real images, grouped in top-level capture-session directories')
-    parser.add_argument('--synthetic-input',help='Synthetic images used to fill the requested count')
+    parser.add_argument('--extra-input',help='Additional images used to fill the requested count')
     parser.add_argument('--finalize',help='Existing mixed run directory after reviewing labels.json')
     parser.add_argument('--out',default='data/autolabel-1000',help='New output directory')
     parser.add_argument('--count',type=int,default=None,help='Total sample size; real images take priority; omit for all')
     parser.add_argument('--seed',type=int,default=42)
     parser.add_argument('--test-count',type=int,default=16,help='Test target (1-100); whole real groups may exceed it')
     parser.add_argument('--val-fraction',type=float,default=.2)
-    parser.add_argument('--threshold',type=float,default=.8)
+    parser.add_argument('--detector',choices=['yunet','retinaface'],default='yunet')
+    parser.add_argument('--threshold',type=float,default=None,help='Score cutoff: yunet 0.8, retinaface 0.8')
     parser.add_argument('--size',type=int,default=640,help='Detector longest input side')
-    parser.add_argument('--cache',default='data/models/yunet/'+REVISION)
+    parser.add_argument('--cache',help='Model cache directory; default depends on detector')
     args=parser.parse_args()
     if args.finalize:
-        if args.input or args.real_input or args.synthetic_input:
+        if args.input or args.real_input or args.extra_input:
             parser.error('--finalize cannot be combined with input directories')
         try:
             finalize_run(args.finalize)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             parser.error(str(exc))
         return
-    mixed = bool(args.real_input or args.synthetic_input)
+    if args.threshold is None:
+        args.threshold = .8
+    mixed = bool(args.real_input or args.extra_input)
     if mixed:
-        if args.input or not (args.real_input and args.synthetic_input):
-            parser.error('Use both --real-input and --synthetic-input, without --input')
-        roots = [Path(args.real_input).resolve(), Path(args.synthetic_input).resolve()]
+        if args.input or not (args.real_input and args.extra_input):
+            parser.error('Use both --real-input and --extra-input, without --input')
+        roots = [Path(args.real_input).resolve(), Path(args.extra_input).resolve()]
     else:
         if not args.input:
-            parser.error('Use --input or both --real-input and --synthetic-input')
+            parser.error('Use --input or both --real-input and --extra-input')
         roots = [Path(args.input).resolve()]
     if (args.count is not None and args.count<1) or args.size<32 or not 0<args.threshold<1:
         parser.error('count >= 1, size >= 32, threshold in (0,1) required')
     if not 1 <= args.test_count <= 100 or not 0 < args.val_fraction < 1:
         parser.error('test-count must be 1-100 and val-fraction in (0,1)')
+    if args.detector == 'retinaface' and args.size != 640:
+        parser.error('RetinaFace ResNet50 export requires --size 640')
     out=Path(args.out).resolve()
     for root in roots:
         if not root.is_dir():
@@ -301,8 +313,16 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
     print(f'Selected {len(selection)} of {total} images (requested={args.count}, seed={args.seed})',flush=True)
-    model=download_model(Path(args.cache))
-    detector=cv2.FaceDetectorYN.create(str(model),'',(args.size,args.size),args.threshold,.3,5000)
+    if args.detector == 'yunet':
+        model=download_model(Path(args.cache or ('data/models/yunet/'+REVISION)))
+        detector=cv2.FaceDetectorYN.create(str(model),'',(args.size,args.size),args.threshold,.3,5000)
+        model_name, model_revision = 'opencv/face_detection_yunet', REVISION
+    else:
+        from utils import retinaface
+        model=retinaface.download_model(Path(args.cache or ('data/models/retinaface/'+retinaface.REVISION)))
+        detector=retinaface.RetinaFace(model,args.threshold)
+        model_name, model_revision = 'clibdev/Pytorch_Retinaface/ResNet50', retinaface.REVISION
+    print(f'Detector: {args.detector}; threshold={args.threshold}; size={args.size}',flush=True)
     out.mkdir(parents=True)
     (out/'selected.json').write_text(json.dumps([r['source'] for r in selection],indent=2))
     (out/'selection.json').write_text(json.dumps(selection,indent=2))
@@ -331,8 +351,8 @@ def main():
     readable=[r for r in rows if r.get('review_status')!='unreadable']
     positive=[r for r in readable if r['boxes']]
     missing=[r for r in readable if not r['boxes']]
-    # Every real selection survives, including misses and unreadable images.
-    labels=[r for r in rows if r['dataset_source']=='real' or r['boxes']]
+    # Keep readable extra misses available for optional manual correction.
+    labels=[r for r in rows if r['dataset_source'] in ('real', 'extra') or r['boxes']]
     for name,group in [('labels.json',labels),('review_no_faces.json',missing)]:
         (out/name).write_text(json.dumps([{k:v for k,v in r.items() if k!='source'} for r in group],indent=2))
     (out/'errors.json').write_text(json.dumps(errors,indent=2))
@@ -348,7 +368,7 @@ def main():
         for row in test_rows:
             row['source']=str((out/row['image']).resolve())
         render_montage(test_rows,out/'test_teacher.jpg')
-    summary=dict(model='opencv/face_detection_yunet',revision=REVISION,
+    summary=dict(detector=args.detector,model=model_name,revision=model_revision,
                  model_sha256=hashlib.sha256(Path(model).read_bytes()).hexdigest(),
                  opencv=cv2.__version__,seed=args.seed,threshold=args.threshold,input_size=args.size,
                  val_fraction=args.val_fraction,requested_test_count=args.test_count,
@@ -368,9 +388,8 @@ def main():
               'review_status to reviewed. Empty boxes mean a HUMAN-CONFIRMED negative.',flush=True)
         groups={r['group'] for r in labels if r['dataset_source']=='real'}
         if len(groups)<3:
-            print('Dataset pending: fewer than three selected real capture groups. '
-                  'Collect/organize independent groups and create a new run; never split a burst randomly.',flush=True)
-        print(f'After review: python autolabel.py --finalize "{out}"',flush=True)
+            print('Fewer than three real groups: finalize will use seeded random image splits.',flush=True)
+        print(f'After review: uv run autolabel.py --finalize "{out}"',flush=True)
     elif split_counts:
         print_dataset_counts(out)
         print(f'Review {out}/test_teacher.jpg before training with --data "{out}".')

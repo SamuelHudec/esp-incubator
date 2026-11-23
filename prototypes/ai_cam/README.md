@@ -12,10 +12,29 @@ in dim light. Measurements and test history: [experiment log](docs/experiment-lo
 
 ## Hardware and setup
 
-- AI Thinker ESP32-CAM with OV2640 and PSRAM; classic ESP32 at 240 MHz.
-- USB programmer; FAT32 microSD optional for photo capture.
-- [Pin table, power and programming notes](docs/wiring.md).
-  Use 3.3 V UART logic; disconnect power before changing wiring or cards.
+| Component | Project hardware / configuration |
+| --- | --- |
+| Board | AI Thinker ESP32-CAM, LaskaKit LA100069; physical PCB revision not recorded |
+| Processor | Classic ESP32, dual-core 32-bit Xtensa LX6, running at 240 MHz; exact chip suffix/revision not recorded |
+| Internal RAM | 520 KB SRAM on the chip; only part is available as application heap |
+| External RAM | 4 MB PSRAM per board specification; first stream logs reported 4,156,888 bytes free |
+| Flash | Firmware uses a 4 MB flash layout; physical capacity of this board has not been verified |
+| Camera | OV2640; configured for 320 × 240 JPEG, quality 12, two framebuffers in PSRAM |
+| Wireless | 2.4 GHz Wi-Fi 802.11 b/g/n; Bluetooth 4.2 / BLE available but unused |
+| Storage | Onboard microSD socket, FAT32, one-bit SDMMC for photos |
+| Illumination | Onboard white LED on GPIO4, PWM brightness control |
+| Programming | External USB-to-UART programmer; tested with a CH340 USB-C ESP32-CAM programmer |
+| Power / logic | 5 V board supply, 3.3 V UART logic; see wiring notes before connecting |
+
+Memory capacities are not free-memory budgets: firmware, Wi-Fi, camera buffers
+and inference consume RAM. Live metrics report internal and PSRAM heap usage
+separately. Flash stores firmware/model weights; it is not working RAM.
+
+Sources: [ESP32 datasheet](https://documentation.espressif.com/esp32_datasheet_en.pdf),
+[AI Thinker board specification](https://www.laskakit.cz/user/related_files/esp32-cam_product_specification.pdf),
+and the project's [measurements](docs/experiment-log.md).
+See [pin table, power and programming notes](docs/wiring.md) for board-variant
+caveats. Disconnect power before changing wiring or cards.
 
 1. Install **esp32 by Espressif Systems 3.3.12** in Arduino IDE.
 2. Open [firmware/firmware.ino](firmware/firmware.ino), select

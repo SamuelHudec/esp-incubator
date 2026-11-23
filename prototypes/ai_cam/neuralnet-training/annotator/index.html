@@ -6,20 +6,43 @@ body{font:15px system-ui;margin:20px;background:#202124;color:#eee}button{font:i
 </style>
 <button id="prev">← Previous</button><button id="next">Next →</button>
 <button id="save">Save / confirm (Enter)</button><button id="remove">Delete box</button>
+<button id="review-all">Mark remaining as reviewed</button>
+<label><input type="checkbox" id="filter"> Only images with 0 or multiple boxes</label>
 <p>Drag empty space to draw · Drag a box to move · Drag corners to resize · Delete to remove · Arrow keys to navigate</p>
+<p id="bulk-confirm" hidden><span id="bulk-message"></span> <button id="bulk-yes">Confirm remaining</button><button id="bulk-no">Cancel</button></p>
 <p id="name"></p><p id="status"></p><canvas id="canvas"></canvas>
 <script>
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),status=document.querySelector('#status');
+let visible=[],filtered=false;
 let rows=[],index=0,boxes=[],selected=-1,img=null,drag=null,busy=false,dirty=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 function message(s){status.textContent=s;}
+function selectImages(){visible=rows.map((r,i)=>i).filter(i=>!filtered||rows[i].boxes.length!==1);}
+function emptyView(){img=null;boxes=[];selected=-1;index=-1;dirty=false;ctx.clearRect(0,0,canvas.width,canvas.height);document.querySelector('#name').textContent='0 images';message('No matching images. Turn off the filter to show all images.');}
+async function changeFilter(){const checkbox=document.querySelector('#filter');if(busy||drag){checkbox.checked=filtered;return;}busy=true;try{if(dirty&&img)await save();filtered=checkbox.checked;selectImages();if(!visible.length){emptyView();return;}if(!visible.includes(index))index=visible[0];await load();}catch(e){checkbox.checked=filtered;message('Not saved: '+e.message);}finally{busy=false;}}
+document.querySelector('#filter').onchange=changeFilter;
+const bulkPanel=document.querySelector('#bulk-confirm');
+document.querySelector('#review-all').onclick=()=>{
+if(busy||drag)return;
+const pending=rows.filter(r=>!r.reviewed);
+if(!pending.length&&!dirty){message('All images are already reviewed.');return;}
+const empty=pending.filter(r=>!r.boxes.length).length;
+document.querySelector('#bulk-message').textContent=`Accept ${pending.length} remaining images, including hidden images? ${empty} currently have no boxes and will become negatives. Current edits will be saved first.`;
+bulkPanel.hidden=false;
+};
+document.querySelector('#bulk-no').onclick=()=>bulkPanel.hidden=true;
+document.querySelector('#bulk-yes').onclick=async()=>{
+if(busy||drag)return;
+bulkPanel.hidden=true;busy=true;message('Saving and confirming remaining images…');
+try{if(dirty&&img)await save();const response=await fetch('/review-remaining',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok){const error=await response.text();throw Error(error==='Unknown endpoint'?'Restart the annotator server, then reload this page.':error);}const result=await response.json();const check=await fetch('/records');if(!check.ok)throw Error('Could not verify saved review status');const saved=await check.json();const remaining=saved.filter(r=>!r.reviewed).length;if(remaining)throw Error(`${remaining} images remain unreviewed.`);rows.forEach(r=>r.reviewed=true);message(`Done — ${result.reviewed} remaining images confirmed and verified. You can run finalize.`);}catch(e){message('Not confirmed: '+e.message);}finally{busy=false;}
+};
 function draw(){if(!img)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
 boxes.forEach((b,i)=>{const [x,y,r,t]=b.map((v,j)=>v*(j%2?canvas.height:canvas.width));ctx.strokeStyle=i===selected?'#00e5ff':'#ffa500';ctx.lineWidth=2;ctx.strokeRect(x,y,r-x,t-y);if(i===selected){ctx.fillStyle='#00e5ff';for(const [a,c] of [[x,y],[r,y],[r,t],[x,t]])ctx.fillRect(a-4,c-4,8,8);}});}
 function fit(){if(!img)return;const scale=Math.min(1,(innerWidth-40)/img.width,Math.max(180,innerHeight-190)/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);draw();}
-async function load(){busy=true;img=null;ctx.clearRect(0,0,canvas.width,canvas.height);selected=-1;dirty=false;boxes=clone(rows[index].boxes);document.querySelector('#name').textContent=`${index+1} / ${rows.length} — ${rows[index].image}`;message('Loading…');
+async function load(){busy=true;img=null;ctx.clearRect(0,0,canvas.width,canvas.height);selected=-1;dirty=false;boxes=clone(rows[index].boxes);document.querySelector('#name').textContent=`${visible.indexOf(index)+1} / ${visible.length}${filtered?" (filtered)":""} — ${rows[index].image}`;message('Loading…');
 try{const response=await fetch('/image/'+index);if(!response.ok)throw Error(await response.text());const url=URL.createObjectURL(await response.blob());try{const image=new Image();image.src=url;await image.decode();img=image;}finally{URL.revokeObjectURL(url);}fit();message(rows[index].reviewed?'Reviewed':'Not reviewed — Enter or navigation saves and confirms this image.');}catch(e){message(e.message);}finally{busy=false;}}
 async function save(){if(!img)throw Error('Image is not loaded; cannot confirm.');const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index,boxes})});if(!response.ok)throw Error(await response.text());rows[index].boxes=clone(boxes);rows[index].reviewed=true;dirty=false;message(boxes.length?'Saved':'Saved — confirmed no faces');}
-async function act(step){if(busy||drag)return;busy=true;try{if(img)await save();if(step){const target=Math.max(0,Math.min(rows.length-1,index+step));if(target!==index){index=target;await load();}}}catch(e){message('Not saved: '+e.message);}finally{busy=false;}}
+async function act(step){if(busy||drag||index<0)return;busy=true;try{if(img)await save();if(step){const target=visible[Math.max(0,Math.min(visible.length-1,visible.indexOf(index)+step))];if(target!==index){index=target;await load();}}}catch(e){message('Not saved: '+e.message);}finally{busy=false;}}
 function point(e){const r=canvas.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];}
 canvas.onpointerdown=e=>{if(busy||!img||e.button!==0)return;const p=point(e);let corner=-1,hit=-1;if(selected>=0){const b=boxes[selected];const corners=[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]]];corner=corners.findIndex(c=>Math.abs(c[0]-p[0])*canvas.width<10&&Math.abs(c[1]-p[1])*canvas.height<10);if(corner>=0)hit=selected;}
 if(hit<0)for(let i=boxes.length-1;i>=0;i--){const b=boxes[i];if(p[0]>=b[0]&&p[0]<=b[2]&&p[1]>=b[1]&&p[1]<=b[3]){hit=i;break;}}
@@ -33,5 +56,5 @@ function remove(){if(busy||drag||selected<0)return;boxes.splice(selected,1);sele
 document.querySelector('#prev').onclick=()=>act(-1);document.querySelector('#next').onclick=()=>act(1);document.querySelector('#save').onclick=()=>act(0);document.querySelector('#remove').onclick=remove;
 window.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Enter','Delete','Backspace'].includes(e.key)){e.preventDefault();if(e.repeat)return;if(e.key==='ArrowLeft')act(-1);else if(e.key==='ArrowRight')act(1);else if(e.key==='Enter')act(0);else remove();}};
 window.onresize=fit;window.onbeforeunload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};
-fetch('/records').then(r=>r.json()).then(data=>{rows=data;index=Math.max(0,rows.findIndex(r=>!r.reviewed));load();}).catch(e=>message(e.message));
+fetch('/records').then(r=>r.json()).then(data=>{rows=data;selectImages();if(!visible.length){emptyView();return;}index=Math.max(0,rows.findIndex(r=>!r.reviewed));load();}).catch(e=>message(e.message));
 </script>

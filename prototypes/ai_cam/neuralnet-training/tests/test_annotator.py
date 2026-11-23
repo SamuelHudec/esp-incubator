@@ -21,7 +21,7 @@ class AnnotatorTests(unittest.TestCase):
             labels.write_text(json.dumps(rows))
             original = labels.read_bytes()
             dataset = Dataset(root)
-            self.assertEqual(len(dataset.indices), 1)
+            self.assertEqual(len(dataset.indices), 2)
             dataset.save(0, [])
             saved = json.loads(labels.read_text())
             self.assertEqual(saved[0]['review_status'], 'reviewed')
@@ -48,3 +48,47 @@ class AnnotatorTests(unittest.TestCase):
             before = labels.read_bytes()
             with self.assertRaisesRegex(ValueError, 'Cannot read'): dataset.save(0, [])
             self.assertEqual(labels.read_bytes(), before)
+
+    def test_extra_misses_are_recovered_and_only_confirmed_negatives_exported(self):
+        from autolabel import export_dataset
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = []
+            for i in range(5):
+                cv2.imwrite(str(root/f'{i}.png'), np.full((12,16,3),i,np.uint8))
+                rows.append(dict(image=f'{i}.png', boxes=[[.1,.1,.9,.9]] if i<3 else [],
+                                 dataset_source='extra'))
+            (root/'labels.json').write_text(json.dumps(rows[:3]))
+            (root/'review_no_faces.json').write_text(json.dumps(rows[3:]+[rows[0]]))
+            dataset = Dataset(root)
+            self.assertEqual(len(dataset.indices),5)
+            dataset.save(3, [])
+            self.assertEqual(Dataset(root).row(3)['review_status'], 'reviewed')
+            export_dataset(root/'labels.json',root/'dataset.json',test_count=1)
+            manifest=json.loads((root/'dataset.json').read_text())
+            exported=[r for split in ('train','val','test') for r in manifest[split]]
+            self.assertEqual(len(exported),4)
+            negative=next(r for r in exported if r['image']=='3.png')
+            self.assertEqual(negative['boxes'],[])
+            self.assertEqual(negative['annotation_source'],'human-reviewed')
+            self.assertNotIn('4.png',[r['image'] for r in exported])
+
+    def test_batch_review_is_atomic_and_preserves_existing_boxes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            cv2.imwrite(str(root/'ok.png'),np.zeros((12,16,3),np.uint8))
+            rows=[dict(image='ok.png',boxes=[[.1,.1,.8,.8]],scores=[.9],dataset_source='real'),
+                  dict(image='missing.png',boxes=[],dataset_source='extra')]
+            path=root/'labels.json';path.write_text(json.dumps(rows))
+            dataset=Dataset(root);original=path.read_bytes()
+            with self.assertRaises(ValueError): dataset.review_remaining()
+            self.assertEqual(path.read_bytes(),original)
+            self.assertNotIn('review_status',dataset.row(0))
+            cv2.imwrite(str(root/'missing.png'),np.zeros((12,16,3),np.uint8))
+            self.assertEqual(dataset.review_remaining(),2)
+            saved=json.loads(path.read_text())
+            self.assertTrue(all(r['review_status']=='reviewed' for r in saved))
+            self.assertEqual(saved[0]['boxes'],rows[0]['boxes'])
+            self.assertEqual(saved[0]['scores'],rows[0]['scores'])
+            self.assertEqual(saved[1]['boxes'],[])
+            self.assertEqual(dataset.review_remaining(),0)

@@ -309,7 +309,7 @@ exact image copies crossing splits are rejected. Near-duplicate and identity
 grouping remain the user's responsibility. Selection counts precede annotation;
 synthetic misses can reduce final dataset size. Training reports/montage labels
 now identify reviewed references instead of labeling every test as teacher-only.
-See the [mixed-data workflow](../neuralnet-training/README.md#mix-real-camera-images-with-a-synthetic-pool).
+See the [mixed-data workflow](../neuralnet-training/README.md#mix-camera-images-with-an-extra-image-pool).
 
 Verification: all 22 Python/host-C tests passed, including new sampling overflow,
 shortage, repeatability, negative loading, group isolation, copy leakage and a

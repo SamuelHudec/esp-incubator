@@ -1,4 +1,4 @@
-"""Small local browser editor for real-image records in labels.json."""
+"""Small local browser editor for image records in labels.json."""
 import argparse
 import json
 import math
@@ -16,9 +16,18 @@ class Dataset:
         self.path = directory.resolve() / 'labels.json'
         self.original = self.path.read_bytes()
         self.rows = json.loads(self.original)
-        self.indices = [i for i, row in enumerate(self.rows) if row.get('dataset_source') == 'real']
+        # Older runs kept extra-source misses only in this review file.
+        missing = self.path.with_name('review_no_faces.json')
+        known = {(self.path.parent / row['image']).resolve() for row in self.rows}
+        if missing.exists():
+            for row in json.loads(missing.read_text()):
+                source = (self.path.parent / row['image']).resolve()
+                if source not in known:
+                    self.rows.append(row)
+                    known.add(source)
+        self.indices = list(range(len(self.rows)))
         if not self.indices:
-            raise ValueError('No real images in labels.json')
+            raise ValueError('No images to review')
 
     def row(self, index):
         if not 0 <= index < len(self.indices):
@@ -35,8 +44,8 @@ class Dataset:
             raise ValueError('Cannot encode image')
         return encoded.tobytes()
 
-    def save(self, index, boxes):
-        row = self.row(index)
+    def validate(self, index, boxes):
+        self.row(index)
         if not isinstance(boxes, list):
             raise ValueError('Invalid boxes')
         for box in boxes:
@@ -45,17 +54,40 @@ class Dataset:
                     or not 0 <= box[0] < box[2] <= 1
                     or not 0 <= box[1] < box[3] <= 1):
                 raise ValueError('Invalid normalized box')
-        self.image(index)  # Never confirm an unreadable image as a negative.
+        source = self.path.parent / self.row(index)['image']
+        if cv2.imread(str(source)) is None:
+            raise ValueError(f'Cannot read {source}')
+    def save(self, index, boxes):
+        self.validate(index, boxes)
+        updated = dict(self.row(index), boxes=boxes, scores=[1.0] * len(boxes), review_status='reviewed')
+        updated.pop('error', None)
+        rows = self.rows.copy()
+        rows[self.indices[index]] = updated
+        self.commit(rows)
+
+    def review_remaining(self):
+        rows = self.rows.copy()
+        count = 0
+        for index in range(len(self.indices)):
+            row = self.row(index)
+            if row.get('review_status') == 'reviewed':
+                continue
+            self.validate(index, row['boxes'])
+            updated = dict(row, review_status='reviewed')
+            updated.pop('error', None)
+            rows[self.indices[index]] = updated
+            count += 1
+        if count:
+            self.commit(rows)
+        return count
+
+    def commit(self, rows):
         if self.path.read_bytes() != self.original:
             raise ValueError('labels.json changed outside this editor. Restart before saving.')
         backup = self.path.with_name('labels.before-review.json')
         if not backup.exists():
             with backup.open('xb') as stream:
                 stream.write(self.original)
-        updated = dict(row, boxes=boxes, scores=[1.0] * len(boxes), review_status='reviewed')
-        updated.pop('error', None)
-        rows = self.rows.copy()
-        rows[self.indices[index]] = updated
         content = (json.dumps(rows, indent=2) + '\n').encode()
         temporary = None
         try:
@@ -106,14 +138,17 @@ def handler(dataset):
                 self.respond(b'Invalid origin', 'text/plain', 403)
                 return
             try:
-                if self.path != '/save':
+                if self.path not in ('/save', '/review-remaining'):
                     raise ValueError('Unknown endpoint')
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= 100000:
                     raise ValueError('Invalid request size')
                 payload = json.loads(self.rfile.read(length))
-                dataset.save(int(payload['index']), payload['boxes'])
-                self.respond(b'{}')
+                if self.path == '/review-remaining':
+                    self.respond(json.dumps(dict(reviewed=dataset.review_remaining())).encode())
+                else:
+                    dataset.save(int(payload['index']), payload['boxes'])
+                    self.respond(b'{}')
             except (ValueError, OSError, KeyError, TypeError, cv2.error) as exc:
                 self.respond(str(exc).encode(), 'text/plain', 400)
     return Handler

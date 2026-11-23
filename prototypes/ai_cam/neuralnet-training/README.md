@@ -1,6 +1,6 @@
 # AI cam model training
 
-Annotate images with YuNet, train the TinyFace detector, and export INT8 weights
+Annotate images with YuNet or RetinaFace, train the TinyFace detector, and export INT8 weights
 for the [ESP32 firmware](../README.md). The current model uses 128×96 grayscale
 input, 5,085 trainable parameters and a single-scale detection head.
 See the [architecture reference](../docs/architecture-reference.md) for details.
@@ -19,7 +19,21 @@ Keep local images in `data/` and results in `runs/`; both are ignored by Git.
 uv run autolabel.py --input /absolute/path/to/images --count 1000 --out data/autolabel-1000
 ```
 
-The script downloads OpenCV YuNet and runs detection locally. `--count` samples
+Choose `--detector yunet` (default) or `--detector retinaface` (ResNet50).
+Both run locally on CPU using OpenCV. RetinaFace downloads a roughly 109 MB ONNX
+model on first use, then reuses its cache; its checksum is verified. Model source:
+[clibdev/Pytorch_Retinaface release 1.0.0](https://github.com/clibdev/Pytorch_Retinaface/releases/tag/1.0.0).
+`summary.json` records the detector, revision and model hash. Both default to
+`--threshold 0.8`; scores are not directly comparable between models. `--size 640`
+controls the longest image side. This RetinaFace export requires size 640 and
+pads to a square without stretching the image. Existing labels and review/finalize workflows
+are unchanged. For example:
+
+```sh
+uv run autolabel.py --real-input /absolute/path/to/camera-photos --extra-input data/wider-single-face --detector retinaface --count 1000 --out data/mixed-retinaface-1000
+```
+
+The script downloads the selected model and runs detection locally. `--count` samples
 images recursively; omit it to use all images. `--seed 42` is the default.
 The output directory must be new and outside the input tree.
 
@@ -33,13 +47,15 @@ Inspect `test_teacher.jpg`, `labels.json`, `review_no_faces.json` and
 Labels are predictions and need review; random image splits can leak related
 identities or near-duplicate images.
 
-## Mix real camera images with a synthetic pool
+## Mix camera images with an extra image pool
 
 ```sh
-uv run autolabel.py --real-input /absolute/path/to/camera-photos --synthetic-input /absolute/path/to/synthetic-faces --count 1000 --out data/mixed-1000
+uv run autolabel.py --real-input /absolute/path/to/camera-photos --extra-input data/wider-single-face --count 1000 --out data/mixed-1000
 ```
 
-Real images take priority within the total count; synthetic images fill the rest.
+Camera images take priority within the total count; extra images fill the rest.
+The extra pool can contain real photos (such as WIDER FACE) or synthetic images.
+New records use `dataset_source: "extra"`; older datasets remain readable.
 Omit `--count` to use both pools in full. Roots must be separate and non-nested.
 Organize real images in top-level capture-session folders. With at least three real groups, each whole folder stays in one split.
 With fewer groups, finalization randomly splits all images using the saved seed;
@@ -60,7 +76,7 @@ not mark images as reviewed or rerun detection. Unreadable images are listed in
 `errors.txt` and cause a nonzero exit. Use `--out` for a different new output
 folder, including when exporting again after correcting annotations.
 
-Review and edit real annotations in the [local annotation editor](annotator/README.md):
+Review and edit camera and extra-source annotations in the [local annotation editor](annotator/README.md):
 
 ```sh
 uv run annotator/annotate.py --data data/mixed-1000
@@ -155,3 +171,21 @@ Tests live in `tests/`, supporting tools in `utils/`, and the C runtime in
 Use `--help` on each script for additional options.
 
 Next experiments: [data and architecture plan](../docs/architecture-experiment-plan.md).
+
+## WIDER FACE single-face collection
+
+`data/wider-single-face/` contains 5,749 original JPEGs in one flat directory,
+selected using exactly one valid face annotation. Labels are not exported; use
+this folder as input to `autolabel.py`. Original train/validation images are
+combined, so this is no longer an official benchmark split. Download provenance
+and source counts are in `summary.json`.
+
+Rebuild from the downloaded archives into a new directory:
+
+```sh
+uv run utils/filter_wider.py --archives data/wider-cache --out data/wider-single-face
+```
+
+Source: [CUHK-CSE/WIDER FACE](https://huggingface.co/datasets/CUHK-CSE/wider_face),
+CC BY-NC-ND 4.0 as stated by the source. The filter checks archive SHA-256 values.
+DARK FACE is not included. Images are not cropped, resized or filtered by brightness.
