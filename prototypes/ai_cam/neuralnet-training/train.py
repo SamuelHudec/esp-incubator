@@ -7,7 +7,7 @@ from utils.training_report import plot_history
 from pathlib import Path
 import numpy as np
 import cv2
-from autolabel import render_montage
+from utils.annotation import render_montage
 import torch
 from torch.utils.data import DataLoader
 from data import Faces, collate
@@ -168,7 +168,9 @@ def main():
     test_loader = DataLoader(test, batch_size=args.batch_size, collate_fn=collate)
     metrics = evaluate(model, test_loader, args.device, args.threshold)
     reviewed = any(row.get('annotation_source') == 'human-reviewed' for row in test.records)
-    metrics['reference'] = ('human-reviewed real labels; additional-source labels are teacher pseudo-labels'
+    metrics['reference'] = ('human-reviewed annotations'
+                            if all(row.get('annotation_source') == 'human-reviewed' for row in test.records)
+                            else 'mixed human-reviewed annotations and teacher pseudo-labels'
                             if reviewed else 'teacher pseudo-labels, not human ground truth')
     (out/'test_metrics.json').write_text(json.dumps(metrics, indent=2))
     teacher_rows, student_rows = [], []

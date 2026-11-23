@@ -3,7 +3,7 @@
 From `neuralnet-training`:
 
 ```sh
-uv run annotator/annotate.py --data data/mixed-1000
+uv run annotator/annotate.py --data data/annotations-camera
 ```
 
 Opens a local browser editor for all images in `labels.json`.
@@ -22,20 +22,22 @@ Opens a local browser editor for all images in `labels.json`.
 - Confirming an image with no boxes marks it as a reviewed negative.
 
 Starts at the first unreviewed image. Unreadable images cannot be confirmed;
-use arrows to skip them and fix the source file before finalizing.
+fix the source file before confirming them.
 Edits are saved to `labels.json`; original images are untouched. Camera and extra-source annotations are editable.
 Older runs also load missing records from `review_no_faces.json`, without
-overwriting existing corrections. Unreviewed extra-source misses are excluded
-by finalize; confirmed empty boxes are included as negatives.
+overwriting existing corrections. The new dataset builder uses only reviewed entries from every source; confirmed
+empty boxes are included as negatives.
 The first save creates `labels.before-review.json`. Closing with unsaved edits
 shows a browser warning. Stop the server with Ctrl+C.
 
-After reviewing all real images:
+After reviewing a collection, create as many training mixes as needed:
 
 ```sh
-uv run autolabel.py --finalize data/mixed-1000
+uv run create_dataset.py --real-data data/annotations-camera --extra-data data/annotations-wider --count 1000 --out data/train-1000
 ```
 
-An existing `dataset.json` is not updated by the editor. Remove that generated
-file before finalizing again if it already exists. Keep the same source groups
-and split settings when comparing training runs.
+No finalize step is needed. Existing `dataset.json` files are snapshots and remain
+unchanged; create a new output directory after changing annotations. Do not delete
+old experiment manifests to update a collection. See the
+[three-stage workflow](../README.md#data-preparation-annotate-once-review-once-mix-many-times)
+for reusable collections and mixing multiple extra sources.

@@ -81,6 +81,11 @@ seconds. See [illumination](docs/illumination.md) for configuration and behavior
 
 ## Model and diagnostics
 
+Data preparation now separates reusable annotation collections, annotation review,
+and training-dataset mixing/splitting (`annotate_data.py` → annotation editor →
+`create_dataset.py`). Reviewed collections can feed multiple experiments; each build creates its own
+train/validation/test split.
+
 Follow the [training workflow](neuralnet-training/README.md) to annotate, train
 and quantize. Successful quantization installs `firmware/neuralnet/nn_model.h`;
 then compile and upload to use it. Without the generated header, streaming works

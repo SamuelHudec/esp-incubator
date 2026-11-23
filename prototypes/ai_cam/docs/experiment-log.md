@@ -371,3 +371,96 @@ instrumentation overhead, so it is not maximum chip throughput. The log does not
 establish long-term memory stability, reconnect behavior, measurement overhead,
 or available capacity for neural-network inference. A zero `psram_min` alone is
 not evidence of PSRAM exhaustion; the reported current free PSRAM stayed constant.
+
+
+## Reusable annotation collections and independent mixing — 2026-11-23
+
+Replaced the recommended combined preparation flow with three independent stages:
+`annotate_data.py` annotates a complete raw source; the existing editor reviews
+its reusable `labels.json`; `create_dataset.py` selects reviewed images from one
+preferred camera collection and any number of extra collections and writes an
+independent train/val/test snapshot. Detectors/rendering live in a prototype-local
+helper; `autolabel.py` remains available only for legacy combined workflows.
+
+The mixer records source label/image hashes, reports per-source counts, preserves
+confirmed negatives, deduplicates identical images and rejects conflicting labels.
+It accepts old reviewed mixed collections without modifying their annotations or
+existing training manifests. `--reuse-splits` fixes evaluation image identities,
+labels and order while varying the training sample; grouped holdouts also exclude
+other members of those capture groups. Stable seeded selection permits nested
+training sets. Image-level splitting remains the visible fallback for flat camera
+folders; `--split-mode group` requires independent groups. A reused random split
+does not repair leakage. Legacy manifests lacking image hashes cannot establish
+whether source images changed before reuse.
+
+Verification: all 33 Python/host-C tests passed. New tests cover the three stages,
+no teacher use during mixing, multiple extra pools, camera priority/overflow,
+confirmed negatives, pending exclusion, deterministic/nested samples, fixed
+holdouts, group isolation, duplicates/conflicts and preservation of old datasets.
+Training only changes its renderer import and reference-label description; model,
+loss, optimization, quantization and firmware are unchanged.
+
+A read-only compatibility attempt on the existing `mixed-retinaface-5000` labels
+found one real annotation conflict between byte-identical WIDER images:
+`train__41_Swimming_Swimmer_41_745.jpg` and
+`train__41_Swimming_Swimming_41_184.jpg`. Their confirmed boxes differ (including
+about 0.025 in normalized top coordinate). The builder correctly refused to
+choose a label silently; reconcile these in a reviewed source collection before
+mixing that full collection. No existing labels/images/runs were changed, no new
+persistent training dataset was created, and no detector download, real training,
+quantization export or firmware upload was performed.
+
+
+## Simplified dataset splitting — 2026-11-23
+
+At the user's request, removed `--reuse-splits` and its reference-holdout loading,
+validation and sampling logic from `create_dataset.py`. Every build now selects
+reviewed records and creates its own train/val/test split. Removed the active
+workflow documentation and tests for split reuse; retained capture-group isolation
+coverage. Earlier entries describe the implementation before this simplification.
+Annotation, review, source priority and the training process are unchanged.
+
+
+## Role-neutral annotation collections — 2026-11-23
+
+Removed `--kind` from `annotate_data.py`. New collections store annotations and
+folder groups without real/extra source tags; priority is assigned only by
+`create_dataset.py --real-data` / `--extra-data`. Older standalone collections'
+kind tags no longer restrict their role, without rewriting existing collections.
+Legacy mixed-run source filtering remains for compatibility with their combined
+camera/extra records.
+
+Critical simplification also consolidated annotation settings/counts into
+`collection.json`, keeping per-image errors in labels and the incremental log
+instead of writing duplicate summary/error files. Multiple extra paths can now
+be passed either together or by repeating `--extra-data`. Review behavior,
+box/duplicate validation and capture-group splitting remain intact. No existing
+images, annotation collections, model runs or firmware were modified.
+
+### 2026-11-23 — Incremental annotation and optional size filtering
+
+Repeated annotation with the same input/output now skips completed images,
+preserves human reviews, retries failures and appends new captures. Journal
+recovery and atomic label writes preserve progress after interruption; changed
+source contents and concurrent review edits are guarded against.
+
+Added `filter_annotations.py` before mixing: retain images whose largest-area
+face has a shorter side at least the specified threshold at model resolution
+(default 8 pixels at 128 × 96). Preserve all boxes on accepted images and retain
+empty annotations with their existing review status. Output references original
+images and records filtering provenance; original collections remain unchanged.
+Filtered collections cannot be repopulated by incremental annotation.
+
+Verification: all 41 Python tests passed, including incremental recovery and
+size-filter boundary/multiple-face cases. No existing dataset was filtered and
+no real-data training or hardware test was performed.
+
+### 2026-11-23 — Resolution-independent face filtering
+
+Replaced the pixel threshold with `--min-face-ratio`, accepting fractions such
+as `1/30` or decimals such as `0.05`. The ratio is the largest bounding-box area
+relative to the entire image; multiple face areas are not summed. The default
+is 1/30 and equality passes. Removed model-resolution arguments. Empty labels,
+review status and all boxes on retained images remain preserved.
+Verification: all 42 tests passed, covering fractional input, threshold boundaries
+and multiple boxes whose combined area would pass but individual areas do not.

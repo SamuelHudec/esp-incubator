@@ -1,5 +1,6 @@
 """Small local browser editor for image records in labels.json."""
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -60,6 +61,8 @@ class Dataset:
     def save(self, index, boxes):
         self.validate(index, boxes)
         updated = dict(self.row(index), boxes=boxes, scores=[1.0] * len(boxes), review_status='reviewed')
+        if 'image_sha256' in updated:
+            updated['image_sha256'] = hashlib.sha256((self.path.parent / updated['image']).read_bytes()).hexdigest()
         updated.pop('error', None)
         rows = self.rows.copy()
         rows[self.indices[index]] = updated
@@ -74,6 +77,8 @@ class Dataset:
                 continue
             self.validate(index, row['boxes'])
             updated = dict(row, review_status='reviewed')
+            if 'image_sha256' in updated:
+                updated['image_sha256'] = hashlib.sha256((self.path.parent / updated['image']).read_bytes()).hexdigest()
             updated.pop('error', None)
             rows[self.indices[index]] = updated
             count += 1
@@ -166,7 +171,10 @@ def main():
     url = f'http://127.0.0.1:{server.server_port}'
     print(f'Annotator: {url}\nCtrl+C to stop.', flush=True)
     if (args.data / 'dataset.json').exists():
-        print('Existing dataset.json is unchanged. Remove it and finalize again after review.', flush=True)
+        print('Existing dataset.json is an unchanged snapshot. After review, use create_dataset.py '
+              'with a new output directory; keep old experiment datasets.', flush=True)
+    else:
+        print('Review updates this annotation collection. Create training mixes later with create_dataset.py.', flush=True)
     webbrowser.open(url)
     try:
         server.serve_forever()
