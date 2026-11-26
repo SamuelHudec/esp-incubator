@@ -10,6 +10,22 @@ from annotator.annotate import Dataset
 
 
 class AnnotatorTests(unittest.TestCase):
+    def test_removal_preserves_order_and_other_records_after_reopen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = [dict(image=f'{i}.png', boxes=[], review_status='pending') for i in range(5)]
+            (root/'labels.json').write_text(json.dumps(rows))
+            dataset = Dataset(root)
+            for index in (2, 3):
+                dataset.delete_image(index)
+            reopened = Dataset(root)
+            self.assertEqual([row['image'] for row in reopened.rows], [row['image'] for row in rows])
+            self.assertEqual(len(reopened.rows), 5)
+            for index in (0, 1, 4):
+                self.assertEqual(reopened.row(index), rows[index])
+            for index in (2, 3):
+                self.assertEqual(reopened.row(index)['review_status'], 'excluded')
+
     def test_review_preserves_sources_and_rejects_external_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

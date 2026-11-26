@@ -22,6 +22,19 @@ never edits a collection, reruns its teacher, or changes an existing dataset.
 
 ### 1. Raw images → annotated collection
 
+To select raw images before annotation, optionally create a random sample:
+
+```bash
+uv run sample_images.py --input data/synthetic --count 500 --out data/synthetic-sample
+```
+
+This copies images from the input and its subdirectories, preserving relative
+paths and leaving originals untouched. Only image files are copied. The output
+must be new and outside the input tree. If fewer images are available, all are
+copied and counts are printed. Add `--seed 42` for a repeatable selection;
+otherwise each run uses a fresh random selection. Use the output as the input
+to `annotate_data.py`.
+
 Annotate the camera and each additional source independently:
 
 ```sh
@@ -98,7 +111,8 @@ area, independent of resolution. `1/30` means at least one thirtieth (about 3.33
 of the image; decimals such as `0.05` (5%) also work. The default is `1/30`, and
 an exact match passes. With multiple faces, only the largest decides whether to
 keep the image; areas are not summed and all boxes are preserved. Images with no
-boxes are kept, with review status unchanged.
+boxes are kept, with review status unchanged. Add `--exclude-empty` to remove
+images without boxes as well (including reviewed negatives).
 
 The output references the original images and preserves review work; it does not
 modify the source. `filter.json` records the rule and removed images. Use the

@@ -107,6 +107,8 @@ def update_collection(root, out, paths, detector_name, threshold, size, cache):
     pending=[]; new=retry=0
     for path in paths:
         row=known.get(path)
+        if row and row.get('review_status') == 'excluded':
+            continue
         digest=hashlib.sha256(path.read_bytes()).hexdigest()
         if row and row.get('image_sha256') and row['image_sha256']!=digest and row.get('review_status') not in ('error','unreadable'):
             raise ValueError(f'Completed image contents changed: {path}. Keep originals unchanged or use a new collection.')

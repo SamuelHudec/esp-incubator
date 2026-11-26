@@ -46,7 +46,8 @@ class Dataset:
         return encoded.tobytes()
 
     def validate(self, index, boxes):
-        self.row(index)
+        if self.row(index).get('review_status') == 'excluded':
+            raise ValueError('Image was removed from this collection')
         if not isinstance(boxes, list):
             raise ValueError('Invalid boxes')
         for box in boxes:
@@ -68,12 +69,18 @@ class Dataset:
         rows[self.indices[index]] = updated
         self.commit(rows)
 
+    def delete_image(self, index):
+        rows = self.rows.copy()
+        updated = dict(self.row(index), review_status='excluded')
+        rows[self.indices[index]] = updated
+        self.commit(rows)
+
     def review_remaining(self):
         rows = self.rows.copy()
         count = 0
         for index in range(len(self.indices)):
             row = self.row(index)
-            if row.get('review_status') == 'reviewed':
+            if row.get('review_status') in ('reviewed', 'excluded'):
                 continue
             self.validate(index, row['boxes'])
             updated = dict(row, review_status='reviewed')
@@ -127,7 +134,8 @@ def handler(dataset):
                     self.respond(Path(__file__).with_name('index.html').read_bytes(), 'text/html; charset=utf-8')
                 elif self.path == '/records':
                     records = [dict(image=dataset.row(i)['image'], boxes=dataset.row(i)['boxes'],
-                                    reviewed=dataset.row(i).get('review_status') == 'reviewed')
+                                    reviewed=dataset.row(i).get('review_status') == 'reviewed',
+                                    excluded=dataset.row(i).get('review_status') == 'excluded')
                                for i in range(len(dataset.indices))]
                     self.respond(json.dumps(records).encode())
                 elif self.path.startswith('/image/'):
@@ -143,7 +151,7 @@ def handler(dataset):
                 self.respond(b'Invalid origin', 'text/plain', 403)
                 return
             try:
-                if self.path not in ('/save', '/review-remaining'):
+                if self.path not in ('/save', '/review-remaining', '/delete-image'):
                     raise ValueError('Unknown endpoint')
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 < length <= 100000:
@@ -151,6 +159,13 @@ def handler(dataset):
                 payload = json.loads(self.rfile.read(length))
                 if self.path == '/review-remaining':
                     self.respond(json.dumps(dict(reviewed=dataset.review_remaining())).encode())
+                elif self.path == '/delete-image':
+                    index = int(payload['index'])
+                    if payload['image'] != dataset.row(index)['image']:
+                        raise ValueError('Image list changed. Reload before removing an image.')
+                    dataset.delete_image(index)
+                    self.respond(json.dumps(dict(index=index, image=dataset.row(index)['image'],
+                                                 excluded=dataset.row(index).get('review_status') == 'excluded')).encode())
                 else:
                     dataset.save(int(payload['index']), payload['boxes'])
                     self.respond(b'{}')

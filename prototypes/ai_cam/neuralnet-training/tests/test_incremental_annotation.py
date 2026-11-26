@@ -103,3 +103,24 @@ class IncrementalTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+class ExclusionTests(unittest.TestCase):
+    def test_removed_image_stays_excluded_after_review_and_incremental_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); raw = root/'raw'; raw.mkdir(); out = root/'out'
+            photo(raw/'a.png')
+            with patch('annotate_data.load_detector', return_value=(object(), {})), patch('annotate_data.detect', return_value=([], [])):
+                annotate_collection(raw, out)
+            dataset = Dataset(out)
+            dataset.delete_image(0)
+            self.assertTrue((raw/'a.png').exists())
+            self.assertEqual(Dataset(out).row(0)['review_status'], 'excluded')
+            self.assertEqual(dataset.review_remaining(), 0)
+            with self.assertRaises(ValueError):
+                dataset.save(0, [])
+            with patch('annotate_data.load_detector', side_effect=AssertionError('Excluded image must not be annotated again')):
+                rows = annotate_collection(raw, out)
+            self.assertEqual(rows[0]['review_status'], 'excluded')
+            from create_dataset import read_collection
+            eligible, _ = read_collection(out, 'real')
+            self.assertEqual(eligible, [])

@@ -464,3 +464,25 @@ is 1/30 and equality passes. Removed model-resolution arguments. Empty labels,
 review status and all boxes on retained images remain preserved.
 Verification: all 42 tests passed, covering fractional input, threshold boundaries
 and multiple boxes whose combined area would pass but individual areas do not.
+
+### 2026-11-23 — Remove unwanted images during annotation review
+
+Added an inline-confirmed Remove image action. Records are marked excluded,
+keeping original files and annotation history while removing them from the editor
+and future mixes. Incremental annotation does not restore excluded images; bulk
+review cannot accept them accidentally. Size filtering drops excluded records.
+Verification: existing 42-test suite passed; the incremental suite then passed all
+6 tests including the new exclusion/reopen/review/remix regression. Browser script
+syntax and diff whitespace checks passed. No user images were removed during testing.
+
+### 2026-11-24 — Stable navigation after image removal
+
+Fixed removal rebuilding the filtered list after earlier box edits. This could
+shift the next position, skip images or revisit previous ones. Removal now drops
+only the selected entry from the current view. Added stable record numbers,
+explicit end-of-list feedback and image-name verification on deletion requests
+and responses. The backing records retain their order and exclusion status.
+Verification: 43 existing Python tests passed; the annotator suite passed with an
+additional persistence/order regression. Node checks exercise actual page handlers
+for filtered/unfiltered consecutive deletion, last/only image and failed writes.
+No user annotation collections were edited during verification.

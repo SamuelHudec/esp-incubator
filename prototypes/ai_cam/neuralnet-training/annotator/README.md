@@ -41,3 +41,23 @@ unchanged; create a new output directory after changing annotations. Do not dele
 old experiment manifests to update a collection. See the
 [three-stage workflow](../README.md#data-preparation-annotate-once-review-once-mix-many-times)
 for reusable collections and mixing multiple extra sources.
+
+Use **Remove image** to exclude the current image from this annotation collection.
+Removal takes one click, without a confirmation; the editor advances to the next visible image. This also
+works for unreadable images. Original photo files stay on disk because other
+collections may reference them. Excluded records retain their annotations for
+recovery but are hidden in the editor, skipped by bulk review, size filtering and
+new training mixes, and are not reannotated on incremental runs. Existing training
+snapshots are unchanged; create a new mix after removal.
+
+Removal preserves the current filtered list and advances to its immediate next
+image. Removing the last visible image explicitly reports that the previous image
+is being shown. The displayed `#` record number remains stable across removals;
+only the visible position/count changes. Toggle the filter to recompute membership.
+Navigation regression checks: `node tests/test_annotator_navigation.js` from the
+training directory.
+
+The **Only not reviewed** checkbox shows images awaiting review. Combine it with
+**Only images with 0 or multiple boxes** to require both conditions. Both filters
+keep a stable snapshot while editing or confirming images; toggle either filter
+to refresh the list. Excluded images remain hidden.

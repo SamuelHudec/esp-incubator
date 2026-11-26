@@ -43,6 +43,13 @@ class FilterTests(unittest.TestCase):
                 filter_annotations(source, out)
             larger, _ = filter_annotations(source, root/'larger', min_face_ratio=0.005)
             self.assertEqual(len(larger), 6)
+            nonempty, report = filter_annotations(source, root/'nonempty', exclude_empty=True)
+            self.assertEqual(len(nonempty), 2)
+            self.assertTrue(all(row['boxes'] for row in nonempty))
+            self.assertEqual(report['without_boxes_kept'], 0)
+            self.assertEqual(report['without_boxes_removed'], 2)
+            self.assertEqual(report['removed_images'], 4)
+            self.assertTrue(report['exclude_empty'])
 
     def test_fraction_and_decimal_thresholds(self):
         self.assertEqual(parse_ratio('1/30'), 1/30)

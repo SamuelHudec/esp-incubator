@@ -6,25 +6,39 @@ body{font:15px system-ui;margin:20px;background:#202124;color:#eee}button{font:i
 </style>
 <button id="prev">← Previous</button><button id="next">Next →</button>
 <button id="save">Save / confirm (Enter)</button><button id="remove">Delete box</button>
+<button id="delete-image">Remove image</button>
 <button id="review-all">Mark remaining as reviewed</button>
 <label><input type="checkbox" id="filter"> Only images with 0 or multiple boxes</label>
+<label><input type="checkbox" id="unreviewed-filter"> Only not reviewed</label>
 <p>Drag empty space to draw · Drag a box to move · Drag corners to resize · Delete to remove · Arrow keys to navigate</p>
 <p id="bulk-confirm" hidden><span id="bulk-message"></span> <button id="bulk-yes">Confirm remaining</button><button id="bulk-no">Cancel</button></p>
 <p id="name"></p><p id="status"></p><canvas id="canvas"></canvas>
 <script>
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),status=document.querySelector('#status');
-let visible=[],filtered=false;
+let visible=[],filtered=false,unreviewedOnly=false;
 let rows=[],index=0,boxes=[],selected=-1,img=null,drag=null,busy=false,dirty=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 function message(s){status.textContent=s;}
-function selectImages(){visible=rows.map((r,i)=>i).filter(i=>!filtered||rows[i].boxes.length!==1);}
-function emptyView(){img=null;boxes=[];selected=-1;index=-1;dirty=false;ctx.clearRect(0,0,canvas.width,canvas.height);document.querySelector('#name').textContent='0 images';message('No matching images. Turn off the filter to show all images.');}
-async function changeFilter(){const checkbox=document.querySelector('#filter');if(busy||drag){checkbox.checked=filtered;return;}busy=true;try{if(dirty&&img)await save();filtered=checkbox.checked;selectImages();if(!visible.length){emptyView();return;}if(!visible.includes(index))index=visible[0];await load();}catch(e){checkbox.checked=filtered;message('Not saved: '+e.message);}finally{busy=false;}}
+function selectImages(){visible=rows.map((r,i)=>i).filter(i=>!rows[i].excluded&&(!filtered||rows[i].boxes.length!==1)&&(!unreviewedOnly||!rows[i].reviewed));}
+function emptyView(){img=null;boxes=[];selected=-1;index=-1;dirty=false;ctx.clearRect(0,0,canvas.width,canvas.height);document.querySelector('#name').textContent='0 images';message('No matching images. Turn off the filters to show all images.');}
+async function changeFilter(){
+const checkbox=document.querySelector('#filter'),unreviewed=document.querySelector('#unreviewed-filter');
+if(busy||drag){checkbox.checked=filtered;unreviewed.checked=unreviewedOnly;return;}
+busy=true;
+try{
+if(dirty&&img)await save();
+filtered=checkbox.checked;unreviewedOnly=unreviewed.checked;selectImages();
+if(!visible.length){emptyView();return;}
+if(!visible.includes(index))index=visible[0];
+await load();
+}catch(e){checkbox.checked=filtered;unreviewed.checked=unreviewedOnly;message('Not saved: '+e.message);}finally{busy=false;}
+}
 document.querySelector('#filter').onchange=changeFilter;
+document.querySelector('#unreviewed-filter').onchange=changeFilter;
 const bulkPanel=document.querySelector('#bulk-confirm');
 document.querySelector('#review-all').onclick=()=>{
 if(busy||drag)return;
-const pending=rows.filter(r=>!r.reviewed);
+const pending=rows.filter(r=>!r.excluded&&!r.reviewed);
 if(!pending.length&&!dirty){message('All images are already reviewed.');return;}
 const empty=pending.filter(r=>!r.boxes.length).length;
 document.querySelector('#bulk-message').textContent=`Accept ${pending.length} remaining images, including hidden images? ${empty} currently have no boxes and will become negatives. Current edits will be saved first.`;
@@ -34,12 +48,30 @@ document.querySelector('#bulk-no').onclick=()=>bulkPanel.hidden=true;
 document.querySelector('#bulk-yes').onclick=async()=>{
 if(busy||drag)return;
 bulkPanel.hidden=true;busy=true;message('Saving and confirming remaining images…');
-try{if(dirty&&img)await save();const response=await fetch('/review-remaining',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok){const error=await response.text();throw Error(error==='Unknown endpoint'?'Restart the annotator server, then reload this page.':error);}const result=await response.json();const check=await fetch('/records');if(!check.ok)throw Error('Could not verify saved review status');const saved=await check.json();const remaining=saved.filter(r=>!r.reviewed).length;if(remaining)throw Error(`${remaining} images remain unreviewed.`);rows.forEach(r=>r.reviewed=true);message(`Done — ${result.reviewed} remaining images confirmed and verified. You can run finalize.`);}catch(e){message('Not confirmed: '+e.message);}finally{busy=false;}
+try{if(dirty&&img)await save();const response=await fetch('/review-remaining',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok){const error=await response.text();throw Error(error==='Unknown endpoint'?'Restart the annotator server, then reload this page.':error);}const result=await response.json();const check=await fetch('/records');if(!check.ok)throw Error('Could not verify saved review status');const saved=await check.json();const remaining=saved.filter(r=>!r.excluded&&!r.reviewed).length;if(remaining)throw Error(`${remaining} images remain unreviewed.`);rows.forEach(r=>r.reviewed=true);message(`Done — ${result.reviewed} remaining images confirmed and verified. You can run finalize.`);}catch(e){message('Not confirmed: '+e.message);}finally{busy=false;}
+};
+document.querySelector('#delete-image').onclick=async()=>{
+if(busy||drag||index<0)return;
+busy=true;bulkPanel.hidden=true;
+try{
+const response=await fetch('/delete-image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index,image:rows[index].image})});
+if(!response.ok)throw Error(await response.text());
+const result=await response.json();
+if(result.index!==index||result.image!==rows[index].image||!result.excluded)throw Error('Removal could not be verified. Reload the page.');
+const removedName=rows[index].image;
+const position=visible.indexOf(index);
+rows[index].excluded=true;dirty=false;
+// Keep the current filter snapshot stable, including previously edited images.
+visible=visible.filter(i=>i!==index);
+if(!visible.length){emptyView();message('No images remaining in this view.');return;}
+index=visible[Math.min(position,visible.length-1)];await load();
+message(`Removed ${removedName}. ${position>=visible.length?'End of list — showing previous image.':'Showing next image.'}`);
+}catch(e){message('Not removed: '+e.message);}finally{busy=false;}
 };
 function draw(){if(!img)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
 boxes.forEach((b,i)=>{const [x,y,r,t]=b.map((v,j)=>v*(j%2?canvas.height:canvas.width));ctx.strokeStyle=i===selected?'#00e5ff':'#ffa500';ctx.lineWidth=2;ctx.strokeRect(x,y,r-x,t-y);if(i===selected){ctx.fillStyle='#00e5ff';for(const [a,c] of [[x,y],[r,y],[r,t],[x,t]])ctx.fillRect(a-4,c-4,8,8);}});}
 function fit(){if(!img)return;const scale=Math.min(1,(innerWidth-40)/img.width,Math.max(180,innerHeight-190)/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);draw();}
-async function load(){busy=true;img=null;ctx.clearRect(0,0,canvas.width,canvas.height);selected=-1;dirty=false;boxes=clone(rows[index].boxes);document.querySelector('#name').textContent=`${visible.indexOf(index)+1} / ${visible.length}${filtered?" (filtered)":""} — ${rows[index].image}`;message('Loading…');
+async function load(){bulkPanel.hidden=true;busy=true;img=null;ctx.clearRect(0,0,canvas.width,canvas.height);selected=-1;dirty=false;boxes=clone(rows[index].boxes);document.querySelector('#name').textContent=`${visible.indexOf(index)+1} / ${visible.length}${filtered||unreviewedOnly?" (filtered)":""} — #${index+1} — ${rows[index].image}`;message('Loading…');
 try{const response=await fetch('/image/'+index);if(!response.ok)throw Error(await response.text());const url=URL.createObjectURL(await response.blob());try{const image=new Image();image.src=url;await image.decode();img=image;}finally{URL.revokeObjectURL(url);}fit();message(rows[index].reviewed?'Reviewed':'Not reviewed — Enter or navigation saves and confirms this image.');}catch(e){message(e.message);}finally{busy=false;}}
 async function save(){if(!img)throw Error('Image is not loaded; cannot confirm.');const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index,boxes})});if(!response.ok)throw Error(await response.text());rows[index].boxes=clone(boxes);rows[index].reviewed=true;dirty=false;message(boxes.length?'Saved':'Saved — confirmed no faces');}
 async function act(step){if(busy||drag||index<0)return;busy=true;try{if(img)await save();if(step){const target=visible[Math.max(0,Math.min(visible.length-1,visible.indexOf(index)+step))];if(target!==index){index=target;await load();}}}catch(e){message('Not saved: '+e.message);}finally{busy=false;}}
@@ -56,5 +88,5 @@ function remove(){if(busy||drag||selected<0)return;boxes.splice(selected,1);sele
 document.querySelector('#prev').onclick=()=>act(-1);document.querySelector('#next').onclick=()=>act(1);document.querySelector('#save').onclick=()=>act(0);document.querySelector('#remove').onclick=remove;
 window.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Enter','Delete','Backspace'].includes(e.key)){e.preventDefault();if(e.repeat)return;if(e.key==='ArrowLeft')act(-1);else if(e.key==='ArrowRight')act(1);else if(e.key==='Enter')act(0);else remove();}};
 window.onresize=fit;window.onbeforeunload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};
-fetch('/records').then(r=>r.json()).then(data=>{rows=data;selectImages();if(!visible.length){emptyView();return;}index=Math.max(0,rows.findIndex(r=>!r.reviewed));load();}).catch(e=>message(e.message));
+fetch('/records').then(r=>r.json()).then(data=>{rows=data;selectImages();if(!visible.length){emptyView();return;}index=visible.find(i=>!rows[i].reviewed)??visible[0];load();}).catch(e=>message(e.message));
 </script>
