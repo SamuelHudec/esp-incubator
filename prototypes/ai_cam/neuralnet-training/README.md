@@ -22,6 +22,29 @@ never edits a collection, reruns its teacher, or changes an existing dataset.
 
 ### 1. Raw images → annotated collection
 
+If you already have COCO bounding-box annotations (for example a Roboflow export),
+import them instead of running a detector:
+
+```bash
+uv run import_coco.py --input data/roboflow-export --out data/annotations-roboflow
+uv run annotator/annotate.py --data data/annotations-roboflow
+```
+
+The importer finds `_annotations.coco.json` recursively, including in `train`,
+`valid` and `test`, or accepts one JSON file as `--input`. Image paths are relative
+to each JSON file. It converts COCO pixel `[x, y, width, height]` boxes to our
+normalized corners, validates image dimensions and preserves multiple faces.
+The default category is `face` (case-insensitive); use `--category NAME` for another
+name. Other classes are skipped and counted. Every image starts **pending review**,
+including images without matching boxes. Scores of 1.0 are placeholders for
+imported annotations, not detector confidence or review approval.
+
+The new collection references original images without copying or changing them.
+Keep the export directory available. Existing output directories are refused.
+Original COCO splits are combined for review; `create_dataset.py` later creates
+new splits from reviewed records. Do not treat this remix as the original benchmark
+split. After review, use this collection with the existing filtering/mixing flow.
+
 To select raw images before annotation, optionally create a random sample:
 
 ```bash
